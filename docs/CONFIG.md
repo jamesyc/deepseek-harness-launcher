@@ -27,7 +27,7 @@ CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 |---|---|---|---|
 | `SERVER_PORT` | `serverPort` property | `3080` | Must be 1–65535; invalid values fall back silently |
 | `WORKSPACE` | `~/.dsh/workspace` | Home-resolved default | Created with `mkdir -p` on first run |
-| `LOG_FILE` | `~/Library/Logs/DeepSeek Harness.log` | Home-resolved default | Server stdout/stderr append here |
+| `LOG_FILE` | `~/Library/Logs/DeepSeek Harness.log` | Home-resolved default | Truncated each time the launcher starts its own server, then appended |
 | `CHROME_APP` | auto-search + file picker | — | If set but missing, a notice shows and search proceeds |
 | `DSH_COMMAND` | auto-detected `mise`/`npx` command | `mise` → `npx` fallback chain | Used verbatim; no `~/` expansion needed |
 

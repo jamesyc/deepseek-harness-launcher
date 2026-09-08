@@ -35,6 +35,9 @@ on run
 		end if
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
+		-- Fresh log per run so a failure dialog shows this attempt, not history.
+		set logDir to do shell script "/usr/bin/dirname " & quoted form of logFile
+		do shell script "/bin/mkdir -p " & quoted form of logDir & "; : > " & quoted form of logFile & " || true"
 		set dshCommand to effectiveDshCommand()
 		set launchCommand to "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
 		set serverPID to do shell script launchCommand
