@@ -3,8 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+# shellcheck source=lib.sh
+. "$ROOT/tests/lib.sh"
+
+need_macos "osacompile missing"
+setup_tmp
 
 "$ROOT/scripts/build.sh" --output "$TMP/v.app" >/dev/null
 "$ROOT/scripts/verify.sh" "$TMP/v.app"

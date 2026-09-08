@@ -4,21 +4,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+# shellcheck source=lib.sh
+. "$ROOT/tests/lib.sh"
+
+need_macos "osacompile/osascript missing"
+setup_tmp
 
 SCPT="$TMP/handlers.scpt"
 /usr/bin/osacompile -o "$SCPT" "$ROOT/src/deepseek-harness-launcher.applescript"
 
 ask() { # ask '<handler call>' -> prints handler result
 	/usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e "tell h to $1"
-}
-
-check() { # check <label> <expected> <actual>
-	if [ "$2" != "$3" ]; then
-		echo "error: $1: expected [$2], got [$3]" >&2
-		exit 1
-	fi
 }
 
 # Pure handlers (no config needed).
@@ -51,4 +47,4 @@ printf '%s\n' "CHROME_APP=$TMP" > "$TMP/chrome.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome.cfg"
 check "chrome-app" "$TMP" "$(ask 'effectiveChromeApp()')"
 
-echo "config parsing ok"
+lib_report "config parsing ok"
