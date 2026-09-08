@@ -6,8 +6,12 @@ It starts the `dsh web` backend when the GUI starts, opens the Chrome-app wrappe
 
 ## Components
 
-- `deepseek-harness-launcher.applescript` — launcher source. Stay-open AppleScript applet.
-- `verify-deepseek-harness-launcher.sh` — smoke-test for the built `.app` bundle.
+- `src/deepseek-harness-launcher.applescript` — launcher source. Stay-open AppleScript applet.
+- `scripts/build.sh` — compiles `src/` into a signed `.app` (adds `LSUIElement`, re-signs).
+- `scripts/install.sh` — installs to `~/Applications`, preserving the existing bundle's ID/icon.
+- `scripts/verify.sh` — smoke-test for a built `.app` bundle.
+- `examples/config.example` — commented sample config.
+- `tests/` — shell tests + fixtures; `.github/workflows/ci.yml` runs them on macOS.
 
 ## What the launcher does
 
@@ -66,33 +70,44 @@ Precedence: config file → built-in defaults. The file-picker cache
 
 ## Build
 
-Option A — Script Editor: open `deepseek-harness-launcher.applescript`, File → Save as Application, check Stay open, name it `DeepSeek Harness Launcher`, save to `~/Applications/`.
+```sh
+./scripts/build.sh
+# custom output:
+./scripts/build.sh --output /tmp/"DeepSeek Harness Launcher.app"
+```
 
-Option B — command line:
+This compiles `src/`, adds `LSUIElement=true` (no Dock icon), and re-signs.
+Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
+
+Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
+File → Save as Application, check Stay open, name it `DeepSeek Harness Launcher`,
+save to `~/Applications/`.
+
+## Install
 
 ```sh
-osacompile -s -o ~/Applications/"DeepSeek Harness Launcher.app" deepseek-harness-launcher.applescript
-# Stay-open applets built with osacompile lack LSUIElement; add it so the
-# launcher runs without a Dock icon, then re-sign (editing Info.plist
-# invalidates the original signature):
-/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" ~/Applications/"DeepSeek Harness Launcher.app"/Contents/Info.plist
-codesign --force --deep --sign - ~/Applications/"DeepSeek Harness Launcher.app"
+./scripts/install.sh
+# ./scripts/install.sh --from /tmp/My.app --to ~/Applications/"DeepSeek Harness Launcher.app"
 ```
+
+Updates an existing install by transplanting only `main.scpt` (keeps bundle ID
+and icon), or fresh-copies the build if none exists. Backs up the old bundle to
+`$TMPDIR` first, then re-signs and verifies.
 
 ## Verify
 
 ```sh
-./verify-deepseek-harness-launcher.sh
+./scripts/verify.sh
 # custom location:
-./verify-deepseek-harness-launcher.sh /path/to/"DeepSeek Harness Launcher.app"
-# or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./verify-deepseek-harness-launcher.sh
+./scripts/verify.sh /path/to/"DeepSeek Harness Launcher.app"
+# or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./scripts/verify.sh
 ```
 
 Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/Chrome-app/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, and `applet.icns` exists.
 
 ## Settings
 
-Edit the `property` lines at the top of the `.applescript`:
+Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescript`:
 
 | Property | Default | Notes |
 |---|---|---|

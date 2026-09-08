@@ -12,6 +12,9 @@
 *.app/
 applet.icns
 
+# Build output
+build/
+
 # Logs
 *.log
 DeepSeek\ Harness.log

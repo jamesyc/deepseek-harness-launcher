@@ -1,0 +1,10 @@
+# Example config for deepseek-harness-launcher.
+# Copy to ~/.config/deepseek-harness-launcher/config and uncomment what you need.
+# Format: KEY=value, '#' comments allowed, last occurrence wins.
+# A leading ~/ is expanded to your home folder; surrounding double quotes are stripped.
+#
+# SERVER_PORT=3080
+# WORKSPACE=~/.dsh/workspace
+# LOG_FILE=~/Library/Logs/DeepSeek Harness.log
+# CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
+# DSH_COMMAND=npx -y @deepseek-ai/dsh web --no-open
