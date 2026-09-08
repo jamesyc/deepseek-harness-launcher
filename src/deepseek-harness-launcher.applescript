@@ -236,6 +236,17 @@ on resolveServerPid(portText, launchPID)
 end resolveServerPid
 
 on homeDirectory()
+	-- Prefer $HOME so tests can run hermetically (HOME=$TMP/fakehome);
+	-- `path to home folder` ignores $HOME. Identical in normal use.
+	try
+		set envHome to do shell script "/usr/bin/printenv HOME || true"
+		if envHome is not "" and envHome starts with "/" then
+			if envHome is not "/" and envHome ends with "/" then
+				set envHome to text 1 thru -2 of envHome
+			end if
+			return envHome
+		end if
+	end try
 	set homePath to POSIX path of (path to home folder)
 	if homePath is not "/" and homePath ends with "/" then
 		set homePath to text 1 thru -2 of homePath

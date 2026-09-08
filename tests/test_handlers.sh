@@ -61,17 +61,15 @@ printf '%s\n' 'DSH_COMMAND=~/bin/mydsh web --no-open' > "$TMP/dsh-tilde.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/dsh-tilde.cfg"
 check "dsh-tilde-expands" "$HOME/bin/mydsh web --no-open" "$(ask 'effectiveDshCommand()')"
 
-# CHROME_APP with ~/ expands to $HOME. Uses a dotfile under $HOME with trap
-# cleanup so failures don't leave residue.
-HOME_TMP_APP="$HOME/.tmp-chrome-handler-test.app"
-rm -rf "$HOME_TMP_APP"
-mkdir -p "$HOME_TMP_APP"
-trap 'rm -rf "$HOME_TMP_APP" "$TMP"' EXIT
+# homeDirectory() honors $HOME (hermetic); falls back to the real home.
+check "home-honors-env" "$TMP/fakehome" "$(HOME="$TMP/fakehome" /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to homeDirectory()')"
+mkdir -p "$TMP/fakehome"
+check "workspace-fakehome" "$TMP/fakehome/.dsh/workspace" "$(HOME="$TMP/fakehome" /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to workspacePath()')"
+
+# CHROME_APP with ~/ expands under a fake HOME; nothing touches the real $HOME.
+mkdir -p "$TMP/fakehome/.tmp-chrome-handler-test.app"
 printf '%s\n' 'CHROME_APP=~/.tmp-chrome-handler-test.app' > "$TMP/chrome-tilde.cfg"
-export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-tilde.cfg"
-check "chrome-tilde-expands" "$HOME/.tmp-chrome-handler-test.app" "$(ask 'effectiveChromeApp()')"
-rm -rf "$HOME_TMP_APP"
-trap 'rm -rf "$TMP"' EXIT
+check "chrome-tilde-expands" "$TMP/fakehome/.tmp-chrome-handler-test.app" "$(HOME="$TMP/fakehome" DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-tilde.cfg" /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to effectiveChromeApp()')"
 
 # chromeCacheFile(): override vs live default.
 export DEEPSEEK_HARNESS_CACHE="$TMP/chrome-cache.txt"
