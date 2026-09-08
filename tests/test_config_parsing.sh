@@ -140,4 +140,24 @@ printf '%s\n' 'WORKSPACE="   "' > "$TMP/quoted-blank.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-blank.cfg"
 check "quoted-blank-workspace-fallback" "$HOME/.dsh/workspace" "$(ask 'effectiveWorkspacePath()')"
 
+# BOM files are unsupported: first key falls back (pinned, not stripped).
+python3 -c "open('$TMP/bom.cfg','wb').write(b'\xef\xbb\xbfSERVER_PORT=3099\n')"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/bom.cfg"
+check "bom-fallback" "3080" "$(ask 'effectiveServerPort()')"
+
+# `export` prefix is unsupported by design (strict ^KEY=): falls back.
+printf '%s\n' 'export SERVER_PORT=3099' > "$TMP/export.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/export.cfg"
+check "export-prefix-fallback" "3080" "$(ask 'effectiveServerPort()')"
+
+# Missing CHROME_APP dir: configValueFor still returns the path (no dialog);
+# effectiveChromeApp() would prompt, so tests never call it with a missing dir.
+printf '%s\n' "CHROME_APP=$TMP/does-not-exist.app" > "$TMP/chrome-missing.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-missing.cfg"
+check "chrome-missing-value" "$TMP/does-not-exist.app" "$(ask 'configValueFor("CHROME_APP")')"
+if [ -d "$TMP/does-not-exist.app" ]; then
+	echo "error: chrome-missing fixture dir unexpectedly exists" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
 lib_report "config parsing ok"
