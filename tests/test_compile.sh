@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
 # shellcheck source=lib.sh
 . "$ROOT/tests/lib.sh"
 
