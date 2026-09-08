@@ -85,7 +85,10 @@ on run
 			return
 		end if
 
-		set serverPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN | /usr/bin/head -n 1"
+		-- Re-resolve the listener PID, but keep the launch PID as fallback:
+		-- an empty or failed lsof must never blank serverPID (orphaned server).
+		set freshPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN | /usr/bin/head -n 1 || true"
+		if freshPID is not "" then set serverPID to freshPID
 	end if
 
 	set chromeApp to effectiveChromeApp()
