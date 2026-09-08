@@ -1,0 +1,5 @@
+# Fixture config exercising every key (see examples/config.example for docs).
+SERVER_PORT=3099
+WORKSPACE=~/work/dsh-test
+LOG_FILE="/tmp/dsh harness test.log"
+DSH_COMMAND=echo fixture-command

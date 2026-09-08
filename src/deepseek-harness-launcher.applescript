@@ -128,6 +128,11 @@ on logFilePath()
 end logFilePath
 
 on configFilePath()
+	-- Test hook: point the launcher at a fixture config without touching ~/.
+	try
+		set configOverride to do shell script "/usr/bin/printenv DEEPSEEK_HARNESS_CONFIG || true"
+		if configOverride is not "" then return configOverride
+	end try
 	return homeDirectory() & "/" & configRelPath
 end configFilePath
 

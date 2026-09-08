@@ -105,6 +105,19 @@ and icon), or fresh-copies the build if none exists. Backs up the old bundle to
 
 Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/Chrome-app/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, and `applet.icns` exists.
 
+## Testing
+
+```sh
+./tests/run.sh
+```
+
+Runs `tests/test_*.sh`: AppleScript compiles, no `/Users/` paths in source or
+compiled output, config handlers behave against fixtures (via the
+`DEEPSEEK_HARNESS_CONFIG` override — set it to point the launcher at a test
+config instead of `~/.config/...`), and a full build-then-verify round trip.
+`.github/workflows/ci.yml` runs `shellcheck` + `run.sh` on `macos-latest`
+(the AppleScript toolchain only exists on macOS).
+
 ## Settings
 
 Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescript`:

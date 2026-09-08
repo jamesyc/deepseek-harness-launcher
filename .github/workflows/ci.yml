@@ -1,0 +1,19 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # osacompile/plutil/osadecompile only exist on macOS.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: brew install shellcheck
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh tests/*.sh
+      - name: Run tests
+        run: ./tests/run.sh
