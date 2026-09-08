@@ -32,22 +32,7 @@ on run
 
 	set existingPIDs to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null || true"
 	if existingPIDs is not "" then
-		-- Accept the npx form (@deepseek-ai/dsh) or the binary form (dsh web).
-		-- Word boundaries keep this strict: a mere mention of dsh in some
-		-- other program's command line must not be mistaken for the server.
-		-- Check every listener (IPv4/IPv6 doubles): adopt the first dsh
-		-- match, and only abort when none of them is the server.
-		set adoptedPID to ""
-		repeat with candidatePID in paragraphs of existingPIDs
-			if candidatePID is not "" then
-				try
-					-- -ww avoids truncating long mise/npx command lines.
-					do shell script "/bin/ps -p " & candidatePID & " -ww -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
-					set adoptedPID to candidatePID
-					exit repeat
-				end try
-			end if
-		end repeat
+		set adoptedPID to dshPidAmongListeners(existingPIDs)
 		if adoptedPID is "" then
 			display dialog "Port " & portText & " is already in use by another program." buttons {"OK"} default button "OK" with icon stop
 			quit
@@ -104,9 +89,10 @@ on run
 		end if
 
 		-- Re-resolve the listener PID, but keep the launch PID as fallback:
-		-- an empty or failed lsof must never blank serverPID (orphaned server).
-		set freshPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true"
-		if freshPID is not "" then set serverPID to freshPID
+		-- an empty, failed, or non-dsh lsof must never blank serverPID
+		-- (orphaned server) or retarget it at an unrelated process.
+		set resolvedPID to resolveServerPid(portText, serverPID)
+		if resolvedPID is not "" then set serverPID to resolvedPID
 	end if
 
 	set chromeApp to effectiveChromeApp()
@@ -206,6 +192,48 @@ on launchCommandFor(wsPath, dshCommand, logFile)
 	-- orphaned server). NEVER join the cd with && here.
 	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
 end launchCommandFor
+
+on dshPidAmongListeners(listenerPIDs)
+	-- Return the first listener PID whose command line is the dsh server,
+	-- or "" when none matches. Accepts the npx form (@deepseek-ai/dsh) or
+	-- the binary form (dsh web). Word boundaries keep this strict: a mere
+	-- mention of dsh in some other program's command line must not be
+	-- mistaken for the server. Checks every listener (IPv4/IPv6 doubles).
+	set matchedPID to ""
+	repeat with candidatePID in paragraphs of listenerPIDs
+		if (candidatePID as text) is not "" then
+			try
+				-- -ww avoids truncating long mise/npx command lines.
+				do shell script "/bin/ps -p " & candidatePID & " -ww -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
+				set matchedPID to candidatePID as text
+				exit repeat
+			end try
+		end if
+	end repeat
+	return matchedPID
+end dshPidAmongListeners
+
+on resolveServerPid(portText, launchPID)
+	-- Re-read the listeners for a freshly started server and return the PID
+	-- to track. Prefers the known launch PID when it is still listening
+	-- (no PID-reuse window, no fork-ordering guess); otherwise falls back to
+	-- the first dsh match among all listeners. Returns "" when nothing
+	-- usable is found so the caller keeps its fallback and never blanks
+	-- serverPID (orphaned server) or retargets an unrelated process.
+	set listenerPIDs to ""
+	try
+		set listenerPIDs to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null || true"
+	end try
+	if listenerPIDs is "" then return ""
+	if launchPID is not "" then
+		repeat with candidatePID in paragraphs of listenerPIDs
+			if (candidatePID as text) is not "" and (candidatePID as text) = (launchPID as text) then
+				return launchPID as text
+			end if
+		end repeat
+	end if
+	return dshPidAmongListeners(listenerPIDs)
+end resolveServerPid
 
 on homeDirectory()
 	set homePath to POSIX path of (path to home folder)
