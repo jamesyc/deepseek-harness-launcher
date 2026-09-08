@@ -6,6 +6,7 @@ property resolvedChromeAppPath : ""
 property serverPort : 3080
 property chromeAppName : "DeepSeek Harness.app"
 property configRelPath : ".config/deepseek-harness-launcher/config"
+property chromeCacheRelPath : "Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath"
 
 on run
 	set serverPID to ""
@@ -27,7 +28,7 @@ on run
 	set portText to (activePort as text)
 	set wsPath to effectiveWorkspacePath()
 	set logFile to effectiveLogFilePath()
-	set checkURL to "http://127.0.0.1:" & portText & "/"
+	set checkURLs to serverCheckURLs(portText)
 
 	set existingPIDs to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null || true"
 	if existingPIDs is not "" then
@@ -58,8 +59,11 @@ on run
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
 		-- Fresh log per run so a failure dialog shows this attempt, not history.
+		-- Rotate a large previous log to .1 first (single backup, 5 MB threshold).
 		set logDir to do shell script "/usr/bin/dirname " & quoted form of logFile
-		do shell script "/bin/mkdir -p " & quoted form of logDir & "; : > " & quoted form of logFile & " || true"
+		do shell script "/bin/mkdir -p " & quoted form of logDir
+		rotateLogIfNeeded(logFile)
+		do shell script ": > " & quoted form of logFile & " || true"
 		set dshCommand to effectiveDshCommand()
 		set launchCommand to launchCommandFor(wsPath, dshCommand, logFile)
 		-- Must return instantly; a hang here stalls run forever (no Chrome,
@@ -72,7 +76,9 @@ on run
 		set serverReady to false
 		repeat 60 times
 			try
-				do shell script "/usr/bin/curl --fail --silent --max-time 1 " & quoted form of checkURL & " >/dev/null"
+				-- Probe IPv4 then IPv6: lsof matches listeners on either
+				-- family, but curl to 127.0.0.1 fails if dsh bound ::1 only.
+				do shell script "/usr/bin/curl --fail --silent --max-time 1 " & quoted form of item 1 of checkURLs & " >/dev/null || /usr/bin/curl --fail --silent --max-time 1 " & quoted form of item 2 of checkURLs & " >/dev/null"
 				set serverReady to true
 				exit repeat
 			on error
@@ -116,7 +122,7 @@ on run
 	do shell script "/usr/bin/open " & quoted form of chromeApp
 
 	repeat 40 times
-		set chromePID to do shell script "/bin/ps -axww -o pid=,command= | /usr/bin/grep -F " & quoted form of loaderPath & " | /usr/bin/grep -v grep | /usr/bin/awk 'NR == 1 { print $1 }' || true"
+		set chromePID to chromePidForLoader(loaderPath)
 		if chromePID is not "" then exit repeat
 		delay 0.25
 	end repeat
@@ -169,6 +175,26 @@ on quit
 	continue quit
 end quit
 
+on serverCheckURLs(portText)
+	-- Probe both loopback families (see run handler).
+	return {"http://127.0.0.1:" & portText & "/", "http://[::1]:" & portText & "/"}
+end serverCheckURLs
+
+on rotateLogIfNeeded(logFile)
+	-- Start-only rotation: keep the per-run fresh-log behavior, but avoid
+	-- unbounded growth across runs. Files over 5 MB move to logFile + ".1".
+	try
+		set logSize to (do shell script "/usr/bin/stat -f%z " & quoted form of logFile & " 2>/dev/null || echo 0") as integer
+	on error
+		return
+	end try
+	if logSize is greater than 5242880 then
+		try
+			do shell script "/bin/mv -f " & quoted form of logFile & " " & quoted form of (logFile & ".1") & " 2>/dev/null || true"
+		end try
+	end if
+end rotateLogIfNeeded
+
 on launchCommandFor(wsPath, dshCommand, logFile)
 	-- Assemble the background-launch shell line. Grammar is load-bearing:
 	-- `do shell script` reads stdout until EOF, so the backgrounded unit must
@@ -206,6 +232,40 @@ on configFilePath()
 	return homeDirectory() & "/" & configRelPath
 end configFilePath
 
+on chromeCacheFile()
+	-- Test hook: redirect the picker cache to a temp file.
+	try
+		set cacheOverride to do shell script "/usr/bin/printenv DEEPSEEK_HARNESS_CACHE || true"
+		if cacheOverride is not "" then return cacheOverride
+	end try
+	return homeDirectory() & "/" & chromeCacheRelPath
+end chromeCacheFile
+
+on readChromeCache()
+	set cacheFile to chromeCacheFile()
+	try
+		do shell script "/bin/test -f " & quoted form of cacheFile
+	on error
+		return ""
+	end try
+	try
+		set cached to do shell script "/usr/bin/head -n 1 " & quoted form of cacheFile & " 2>/dev/null | /usr/bin/tr -d '\\r\\n' || true"
+		if cached is "" then return ""
+		return cached
+	on error
+		return ""
+	end try
+end readChromeCache
+
+on writeChromeCache(appPath)
+	if appPath is "" then return
+	set cacheFile to chromeCacheFile()
+	try
+		set cacheDir to do shell script "/usr/bin/dirname " & quoted form of cacheFile
+		do shell script "/bin/mkdir -p " & quoted form of cacheDir & "; /usr/bin/printf %s " & quoted form of appPath & " > " & quoted form of cacheFile & "; /bin/chmod 600 " & quoted form of cacheFile & " || true"
+	end try
+end writeChromeCache
+
 on expandedPath(thePath)
 	if thePath is "~" then
 		return homeDirectory()
@@ -236,13 +296,24 @@ on configValueFor(keyName)
 		return ""
 	end try
 	try
-		set rawVal to do shell script "/usr/bin/grep -E '^" & keyName & "=' " & quoted form of cfg & " | /usr/bin/tail -n 1 | /usr/bin/cut -d= -f2- || true"
+		-- Exact key match ($1 == key): SERVER_PORT_EXTRA must not match
+		-- SERVER_PORT. Last occurrence wins; values may contain '='.
+		-- Outer [space/tab/CR] trimmed so 'KEY=  ~/x  ' and CRLF files work.
+		-- Key syntax stays strict (^KEY=, no export/spaces) by design.
+		set rawVal to do shell script "/usr/bin/awk -F= -v key=" & quoted form of keyName & " '$1 == key { v = substr($0, length($1) + 2) } END { gsub(/^[ \\t\\r]+|[ \\t\\r]+$/, \"\", v); print v }' " & quoted form of cfg & " || true"
 	on error
 		return ""
 	end try
 	if rawVal is "" then return ""
 	set rawVal to unquoted(rawVal)
 	if rawVal is "" then return ""
+	-- A quoted blank (KEY="   ") counts as unset, like KEY="".
+	try
+		set blankCheck to do shell script "/usr/bin/printf %s " & quoted form of rawVal & " | /usr/bin/tr -d '[:space:]'"
+		if blankCheck is "" then return ""
+	on error
+		return ""
+	end try
 	return expandedPath(rawVal)
 end configValueFor
 
@@ -301,10 +372,34 @@ on chromeLoaderPathFor(chromeApp)
 	end try
 end chromeLoaderPathFor
 
+on chromePidForLoader(loaderPath)
+	-- Exact executable match: the ps command must equal the loader path or
+	-- start with it followed by a space (args). A plain substring match
+	-- would confuse /Foo.app/... with /Foo2.app/.... Single awk, no grep,
+	-- so no grep -v self-match dance and no SIGPIPE pipefail hazard.
+	try
+		return do shell script "/bin/ps -axww -o pid=,command= | /usr/bin/awk -v target=" & quoted form of loaderPath & " '{ pid = $1; sub(/^ *[^ ]+ +/, \"\"); cmd = $0; if (cmd == target || substr(cmd, 1, length(target) + 1) == target \" \") { print pid; exit } }' || true"
+	on error
+		return ""
+	end try
+end chromePidForLoader
+
 on findChromeApp()
+	-- 1. File cache: survives reinstalls (unlike the legacy main.scpt property).
+	set cachedPath to readChromeCache()
+	if cachedPath is not "" then
+		try
+			do shell script "/bin/test -d " & quoted form of cachedPath
+			set resolvedChromeAppPath to cachedPath
+			return cachedPath
+		end try
+	end if
+
+	-- 2. Legacy in-memory property: migrate pre-file-cache picks forward.
 	if resolvedChromeAppPath is not "" then
 		try
 			do shell script "/bin/test -d " & quoted form of resolvedChromeAppPath
+			writeChromeCache(resolvedChromeAppPath)
 			return resolvedChromeAppPath
 		end try
 	end if
@@ -315,6 +410,7 @@ on findChromeApp()
 		try
 			do shell script "/bin/test -d " & quoted form of candidate
 			set resolvedChromeAppPath to candidate as text
+			writeChromeCache(resolvedChromeAppPath)
 			return resolvedChromeAppPath
 		end try
 	end repeat
@@ -325,6 +421,7 @@ on findChromeApp()
 		if resolvedChromeAppPath ends with "/" then
 			set resolvedChromeAppPath to text 1 thru -2 of resolvedChromeAppPath
 		end if
+		writeChromeCache(resolvedChromeAppPath)
 		return resolvedChromeAppPath
 	on error errorMessage number errorNumber
 		if errorNumber is -128 then

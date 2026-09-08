@@ -18,9 +18,9 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 
 1. If another copy of the launcher is already running, focuses it and exits.
 2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog.
-3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log` (truncated on each start).
-4. Waits (up to ~90s worst case: 60 tries × 1s curl timeout + 0.5s delay) for `http://127.0.0.1:3080/` to answer.
-5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID.
+3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
+4. Waits (up to ~150s worst case: 60 tries × 1s curl timeout × 2 families + 0.5s delay) for `http://127.0.0.1:3080/` or `http://[::1]:3080/` to answer.
+5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID (exact executable match).
 6. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
 7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits.
 
@@ -35,7 +35,7 @@ No hardcoded usernames. Home-based paths resolve from `(path to home folder)` at
 
 `dsh` resolution order: `/opt/homebrew/bin/mise` (Apple Silicon) → `/usr/local/bin/mise` (Intel) → `mise` on `PATH` → `npx -y @deepseek-ai/dsh` fallback.
 
-Chrome-app search order: `~/Applications/<name>` → `~/Applications/Chrome Apps.localized/<name>` → `/Applications/<name>` → `/Applications/Chrome Apps.localized/<name>`. If none is found, a file picker asks once and the choice is cached in the applet's `resolvedChromeAppPath` property.
+Chrome-app search order: `~/Applications/<name>` → `~/Applications/Chrome Apps.localized/<name>` → `/Applications/<name>` → `/Applications/Chrome Apps.localized/<name>`. If none is found, a file picker asks once and the choice is cached in `~/Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` (survives reinstalls).
 
 ## Configuration (optional)
 
@@ -101,9 +101,9 @@ Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the emb
 ```
 
 Runs `tests/test_*.sh`: AppleScript compiles, no `/Users/` paths in source or
-compiled output, config handlers behave against fixtures (via the
-`DEEPSEEK_HARNESS_CONFIG` override — set it to point the launcher at a test
-config instead of `~/.config/...`), and a full build-then-verify round trip.
+compiled output, config/handlers behave against fixtures (via the
+`DEEPSEEK_HARNESS_CONFIG` and `DEEPSEEK_HARNESS_CACHE` overrides), Chrome-PID
+matching fixtures, and a full build-then-verify round trip.
 `.github/workflows/ci.yml` runs `shellcheck` + `run.sh` on `macos-latest`
 (the AppleScript toolchain only exists on macOS).
 
@@ -115,15 +115,17 @@ Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescri
 |---|---|---|
 | `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
 | `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
-| `resolvedChromeAppPath` | `""` | Leave empty; auto-filled after first file-picker use. Reset on every reinstall — set `CHROME_APP` in the config file for a persistent choice |
+| `resolvedChromeAppPath` | `""` | Legacy in-memory fallback; the file-picker cache now lives in `~/Library/Application Support/...` and survives reinstalls |
 | `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
+| `chromeCacheRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` | Home-relative picker cache; `DEEPSEEK_HARNESS_CACHE` env overrides it (tests) |
 
 ## Uninstall
 
 ```sh
 rm -rf ~/Applications/"DeepSeek Harness Launcher.app"
-# optional: config, log, workspace
-rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/.dsh/workspace
+# optional: config, log, workspace, picker cache
+rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/Library/Logs/DeepSeek\ Harness.log.1 ~/.dsh/workspace
+rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
 ```
 
 `install.sh` leaves timestamped backups in `$TMPDIR`
@@ -134,9 +136,8 @@ rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log 
 - **"Port 3080 is already in use"** — another program owns the port. Stop it
   or set `SERVER_PORT` in the config (the Chrome app must target the same port).
 - **"DeepSeek Harness did not start"** — check the tail of the log:
-  `tail -n 50 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
-- **File picker reappears after update** — reinstalls reset the picker's
-  cached path. Set `CHROME_APP` in the config file instead.
+  `tail -n 20 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
+  Previous large logs rotate to `*.log.1`.
 - **No Automation permission prompt is expected** — the launcher avoids
   System Events by design.
 - `DEEPSEEK_HARNESS_CONFIG` only takes effect when launching from a terminal;

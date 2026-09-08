@@ -31,7 +31,7 @@ fi
 for t in "${files[@]}"; do
 	name="$(basename "$t")"
 	# Isolate env overrides between test files.
-	output="$(env -u DEEPSEEK_HARNESS_CONFIG -u DEEPSEEK_HARNESS_LAUNCHER_APP bash "$t" 2>&1)"
+	output="$(env -u DEEPSEEK_HARNESS_CONFIG -u DEEPSEEK_HARNESS_CACHE -u DEEPSEEK_HARNESS_LAUNCHER_APP bash "$t" 2>&1)"
 	status=$?
 	if [ $status -eq 0 ]; then
 		case "$output" in

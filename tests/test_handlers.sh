@@ -17,8 +17,8 @@ SCPT="$TMP/handlers.scpt"
 ask() { # ask '<handler call>' -> prints handler result
 	/usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e "tell h to $1"
 }
-ask_noenv() { # ask without the config override (tests live defaults)
-	env -u DEEPSEEK_HARNESS_CONFIG /usr/bin/osascript \
+ask_noenv() { # ask without the config/cache overrides (tests live defaults)
+	env -u DEEPSEEK_HARNESS_CONFIG -u DEEPSEEK_HARNESS_CACHE /usr/bin/osascript \
 		-e "set h to load script POSIX file \"$SCPT\"" -e "tell h to $1"
 }
 
@@ -61,11 +61,50 @@ printf '%s\n' 'DSH_COMMAND=~/bin/mydsh web --no-open' > "$TMP/dsh-tilde.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/dsh-tilde.cfg"
 check "dsh-tilde-expands" "$HOME/bin/mydsh web --no-open" "$(ask 'effectiveDshCommand()')"
 
-# CHROME_APP with ~/ expands to $HOME.
-mkdir -p "$HOME/.tmp-chrome-handler-test.app"
+# CHROME_APP with ~/ expands to $HOME. Uses a dotfile under $HOME with trap
+# cleanup so failures don't leave residue.
+HOME_TMP_APP="$HOME/.tmp-chrome-handler-test.app"
+rm -rf "$HOME_TMP_APP"
+mkdir -p "$HOME_TMP_APP"
+trap 'rm -rf "$HOME_TMP_APP" "$TMP"' EXIT
 printf '%s\n' 'CHROME_APP=~/.tmp-chrome-handler-test.app' > "$TMP/chrome-tilde.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-tilde.cfg"
 check "chrome-tilde-expands" "$HOME/.tmp-chrome-handler-test.app" "$(ask 'effectiveChromeApp()')"
-rmdir "$HOME/.tmp-chrome-handler-test.app"
+rm -rf "$HOME_TMP_APP"
+trap 'rm -rf "$TMP"' EXIT
+
+# chromeCacheFile(): override vs live default.
+export DEEPSEEK_HARNESS_CACHE="$TMP/chrome-cache.txt"
+check "cache-override-exact" "$TMP/chrome-cache.txt" "$(ask 'chromeCacheFile()')"
+check "cache-default" "$HOME/Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath" "$(env -u DEEPSEEK_HARNESS_CACHE /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to chromeCacheFile()')"
+
+# write/read round-trip (600 perms) + findChromeApp prefers the file cache.
+mkdir -p "$TMP/Cached.app"
+export DEEPSEEK_HARNESS_CACHE="$TMP/chrome-cache.txt"
+ask "writeChromeCache(\"$TMP/Cached.app\")" >/dev/null
+check "cache-roundtrip" "$TMP/Cached.app" "$(ask 'readChromeCache()')"
+check "find-prefers-cache" "$TMP/Cached.app" "$(ask 'findChromeApp()')"
+if [ "$(stat -f %A "$TMP/chrome-cache.txt")" != "600" ]; then
+	echo "error: cache-perms: expected 600" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
+# serverCheckURLs(): both loopback families.
+check "server-urls" "http://127.0.0.1:3080/, http://[::1]:3080/" "$(ask 'serverCheckURLs("3080")')"
+
+# rotateLogIfNeeded(): small kept, large rotated to .1.
+printf 'small' > "$TMP/rot-small.log"
+ask "rotateLogIfNeeded(\"$TMP/rot-small.log\")" >/dev/null
+test -f "$TMP/rot-small.log" || { echo "error: rotate-small: log missing" >&2; LIB_FAILS=$((LIB_FAILS + 1)); }
+test ! -f "$TMP/rot-small.log.1" || { echo "error: rotate-small: unexpected .1" >&2; LIB_FAILS=$((LIB_FAILS + 1)); }
+python3 -c "open('$TMP/rot-big.log','wb').write(b'x'*6000000)"
+ask "rotateLogIfNeeded(\"$TMP/rot-big.log\")" >/dev/null
+test -f "$TMP/rot-big.log.1" || { echo "error: rotate-big: .1 missing" >&2; LIB_FAILS=$((LIB_FAILS + 1)); }
+
+# chromePidForLoader(): runs against live ps; just assert it exits 0 and prints PID-or-empty.
+ask "chromePidForLoader(\"$TMP/Cached.app/Contents/MacOS/app_mode_loader\")" >/dev/null || {
+	echo "error: chrome-pid-handler failed" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+}
 
 lib_report "handlers ok"

@@ -117,4 +117,27 @@ printf '%s\n' "CHROME_APP=$TMP" > "$TMP/chrome.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome.cfg"
 check "chrome-app" "$TMP" "$(ask 'effectiveChromeApp()')"
 
+# Values are trimmed: 'KEY=  ~/x  ' expands without whitespace.
+printf '%s\n' 'WORKSPACE=  ~/work  ' > "$TMP/trim-ws.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/trim-ws.cfg"
+check "value-whitespace-trimmed" "$HOME/work" "$(ask 'effectiveWorkspacePath()')"
+
+# CRLF line endings work (CR stripped).
+printf 'SERVER_PORT=3099\r\n' > "$TMP/crlf.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/crlf.cfg"
+check "crlf-port" "3099" "$(ask 'effectiveServerPort()')"
+
+# Key prefix must not match: SERVER_PORT_EXTRA is not SERVER_PORT.
+printf '%s\n' 'SERVER_PORT_EXTRA=9999' > "$TMP/prefix.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/prefix.cfg"
+check "key-prefix-no-match" "3080" "$(ask 'effectiveServerPort()')"
+printf '%s\n' 'SERVER_PORT_EXTRA=9999' 'SERVER_PORT=3099' > "$TMP/prefix2.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/prefix2.cfg"
+check "key-prefix-with-real" "3099" "$(ask 'effectiveServerPort()')"
+
+# Quoted blanks count as unset.
+printf '%s\n' 'WORKSPACE="   "' > "$TMP/quoted-blank.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-blank.cfg"
+check "quoted-blank-workspace-fallback" "$HOME/.dsh/workspace" "$(ask 'effectiveWorkspacePath()')"
+
 lib_report "config parsing ok"
