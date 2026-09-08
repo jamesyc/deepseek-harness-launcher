@@ -44,6 +44,9 @@ on run
 			quit
 			return
 		end if
+		-- Adopt the running server: track it so idle notices if it dies,
+		-- but ownsServer stays false so quit never kills what it didn't start.
+		set serverPID to existingPID
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
 		-- Fresh log per run so a failure dialog shows this attempt, not history.
@@ -115,7 +118,7 @@ on idle
 		end try
 	end if
 
-	if ownsServer and serverPID is not "" then
+	if serverPID is not "" then
 		try
 			do shell script "/bin/kill -0 " & serverPID
 		on error
