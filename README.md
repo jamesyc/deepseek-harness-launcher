@@ -104,20 +104,16 @@ Runs `tests/test_*.sh`: AppleScript compiles, no `/Users/` paths in source or
 compiled output, config/handlers behave against fixtures (via the
 `DEEPSEEK_HARNESS_CONFIG` and `DEEPSEEK_HARNESS_CACHE` overrides), Chrome-PID
 matching fixtures, and a full build-then-verify round trip.
-`.github/workflows/ci.yml` runs `shellcheck` + `run.sh` on `macos-latest`
+`.github/workflows/ci.yml` runs a fast Linux job (`shellcheck` + portable
+tests) and a full `run.sh` job on `macos-latest`
 (the AppleScript toolchain only exists on macOS).
 
 ## Settings
 
-Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescript`:
-
-| Property | Default | Notes |
-|---|---|---|
-| `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
-| `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
-| `resolvedChromeAppPath` | `""` | Legacy in-memory fallback; the file-picker cache now lives in `~/Library/Application Support/...` and survives reinstalls |
-| `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
-| `chromeCacheRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` | Home-relative picker cache; `DEEPSEEK_HARNESS_CACHE` env overrides it (tests) |
+Build-time defaults live in the `property` lines at the top of
+`src/deepseek-harness-launcher.applescript`; runtime overrides live in
+`~/.config/deepseek-harness-launcher/config`. Full reference (keys, format,
+precedence, picker cache): [`docs/CONFIG.md`](docs/CONFIG.md).
 
 ## Uninstall
 
@@ -128,8 +124,8 @@ rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log 
 rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
 ```
 
-`install.sh` leaves timestamped backups in `$TMPDIR`
-(`DeepSeek-Harness-Launcher-backup-*.app`); delete them when done.
+`install.sh` keeps the 5 newest timestamped backups in `$TMPDIR`
+(`DeepSeek-Harness-Launcher-backup-*.app`); older ones are pruned automatically.
 
 ## Troubleshooting
 

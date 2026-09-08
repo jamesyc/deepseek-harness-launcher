@@ -44,7 +44,15 @@ is only consulted when `CHROME_APP` is unset. It survives reinstalls;
 `CHROME_APP` in the config file still wins when set.
 
 For build-time defaults (used when no config file exists), edit the `property`
-lines at the top of `src/deepseek-harness-launcher.applescript` and rebuild.
+lines at the top of `src/deepseek-harness-launcher.applescript` and rebuild:
+
+| Property | Default | Notes |
+|---|---|---|
+| `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
+| `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
+| `resolvedChromeAppPath` | `""` | Legacy in-memory fallback; the file-picker cache file (above) is the persistent store |
+| `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
+| `chromeCacheRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` | Home-relative picker cache; `DEEPSEEK_HARNESS_CACHE` env overrides it (tests) |
 
 ## Testing override
 
