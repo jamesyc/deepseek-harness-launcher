@@ -16,12 +16,13 @@ It starts the `dsh web` backend when the GUI starts, opens the Chrome-app wrappe
 
 ## What the launcher does
 
-1. Checks port `3080` (see `serverPort`). If something other than `@deepseek-ai/dsh` owns it, aborts with a dialog.
-2. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log`.
-3. Waits (up to ~30s) for `http://127.0.0.1:3080/` to answer.
-4. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its `app_mode_loader` PID.
-5. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
-6. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits.
+1. If another copy of the launcher is already running, focuses it and exits.
+2. Checks port `3080` (see `serverPort`). If something other than `@deepseek-ai/dsh` owns it, aborts with a dialog.
+3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log`.
+4. Waits (up to ~30s) for `http://127.0.0.1:3080/` to answer.
+5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID.
+6. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
+7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits.
 
 It never kills a server it didn't start (`ownsServer` flag).
 

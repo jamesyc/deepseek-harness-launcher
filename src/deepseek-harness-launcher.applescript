@@ -12,6 +12,17 @@ on run
 	set chromePID to ""
 	set ownsServer to false
 
+	-- Single-instance guard: a second launch just focuses the running one.
+	-- Pure shell (no System Events), so no extra Automation permission prompt.
+	set myBundle to POSIX path of (path to me)
+	if myBundle ends with "/" then set myBundle to text 1 thru -2 of myBundle
+	set instanceCount to (do shell script "/bin/ps -axo command= | /usr/bin/grep -F " & quoted form of myBundle & " | /usr/bin/grep -v grep | /usr/bin/wc -l | /usr/bin/tr -d ' '") as integer
+	if instanceCount > 1 then
+		do shell script "/usr/bin/open " & quoted form of myBundle
+		quit
+		return
+	end if
+
 	set activePort to effectiveServerPort()
 	set portText to (activePort as text)
 	set wsPath to effectiveWorkspacePath()
