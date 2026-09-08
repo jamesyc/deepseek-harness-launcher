@@ -31,6 +31,33 @@ No hardcoded usernames. Home-based paths resolve from `(path to home folder)` at
 
 Chrome-app search order: `~/Applications/<name>` → `~/Applications/Chrome Apps.localized/<name>` → `/Applications/<name>` → `/Applications/Chrome Apps.localized/<name>`. If none is found, a file picker asks once and the choice is cached in the applet's `resolvedChromeAppPath` property.
 
+## Configuration (optional)
+
+All settings have working defaults — no config file needed. To override, create
+`~/.config/deepseek-harness-launcher/config` as plain `KEY=value` lines
+(`#` comments allowed, last occurrence wins). A leading `~/` is expanded to your
+home folder, and surrounding double quotes are stripped.
+
+```sh
+# ~/.config/deepseek-harness-launcher/config
+SERVER_PORT=3080
+WORKSPACE=~/.dsh/workspace
+LOG_FILE=~/Library/Logs/DeepSeek Harness.log
+CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
+# DSH_COMMAND=npx -y @deepseek-ai/dsh web --no-open
+```
+
+| Key | Overrides | Default |
+|---|---|---|
+| `SERVER_PORT` | `serverPort` property | `3080` (invalid values fall back silently) |
+| `WORKSPACE` | `~/.dsh/workspace` | Home-resolved default |
+| `LOG_FILE` | `~/Library/Logs/DeepSeek Harness.log` | Home-resolved default |
+| `CHROME_APP` | auto-search + file picker | If set but missing, a notice shows and search proceeds |
+| `DSH_COMMAND` | auto-detected `mise`/`npx` command | Used verbatim |
+
+Precedence: config file → built-in defaults. The file-picker cache
+(`resolvedChromeAppPath`) is only consulted when `CHROME_APP` is unset.
+
 ## Prerequisites
 
 - macOS with Chrome + a Chrome app for `http://127.0.0.1:3080` named `DeepSeek Harness`

@@ -5,16 +5,18 @@ property resolvedChromeAppPath : ""
 
 property serverPort : 3080
 property chromeAppName : "DeepSeek Harness.app"
+property configRelPath : ".config/deepseek-harness-launcher/config"
 
 on run
 	set serverPID to ""
 	set chromePID to ""
 	set ownsServer to false
 
-	set portText to (serverPort as text)
-	set wsPath to workspacePath()
-	set logFile to logFilePath()
-	set checkURL to serverURL()
+	set activePort to effectiveServerPort()
+	set portText to (activePort as text)
+	set wsPath to effectiveWorkspacePath()
+	set logFile to effectiveLogFilePath()
+	set checkURL to "http://127.0.0.1:" & portText & "/"
 
 	set existingPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true"
 	if existingPID is not "" then
@@ -26,7 +28,7 @@ on run
 		end if
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
-		set dshCommand to do shell script "if [ -x /opt/homebrew/bin/mise ]; then echo '/opt/homebrew/bin/mise exec -- dsh web --no-open'; elif [ -x /usr/local/bin/mise ]; then echo '/usr/local/bin/mise exec -- dsh web --no-open'; elif /usr/bin/command -v mise >/dev/null 2>&1; then echo 'mise exec -- dsh web --no-open'; else echo 'npx -y @deepseek-ai/dsh web --no-open'; fi"
+		set dshCommand to effectiveDshCommand()
 		set launchCommand to "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
 		set serverPID to do shell script launchCommand
 		set ownsServer to true
@@ -51,7 +53,7 @@ on run
 		set serverPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN | /usr/bin/head -n 1"
 	end if
 
-	set chromeApp to findChromeApp()
+	set chromeApp to effectiveChromeApp()
 	if chromeApp is "" then
 		quit
 		return
@@ -125,9 +127,87 @@ on logFilePath()
 	return homeDirectory() & "/Library/Logs/DeepSeek Harness.log"
 end logFilePath
 
-on serverURL()
-	return "http://127.0.0.1:" & (serverPort as text) & "/"
-end serverURL
+on configFilePath()
+	return homeDirectory() & "/" & configRelPath
+end configFilePath
+
+on expandedPath(thePath)
+	if thePath is "~" then
+		return homeDirectory()
+	else if thePath starts with "~/" then
+		return homeDirectory() & text 2 thru -1 of thePath
+	end if
+	return thePath
+end expandedPath
+
+on unquoted(theValue)
+	set trimmed to theValue
+	if trimmed starts with "\"" and trimmed ends with "\"" and (length of trimmed) ≥ 2 then
+		set trimmed to text 2 thru -2 of trimmed
+	end if
+	return trimmed
+end unquoted
+
+on configValueFor(keyName)
+	set cfg to configFilePath()
+	try
+		do shell script "/bin/test -f " & quoted form of cfg
+	on error
+		return ""
+	end try
+	try
+		set rawVal to do shell script "/usr/bin/grep -E '^" & keyName & "=' " & quoted form of cfg & " | /usr/bin/tail -n 1 | /usr/bin/cut -d= -f2- || true"
+	on error
+		return ""
+	end try
+	if rawVal is "" then return ""
+	set rawVal to unquoted(rawVal)
+	if rawVal is "" then return ""
+	return expandedPath(rawVal)
+end configValueFor
+
+on effectiveServerPort()
+	set rawPort to configValueFor("SERVER_PORT")
+	if rawPort is not "" then
+		try
+			set trimmed to do shell script "/usr/bin/printf %s " & quoted form of rawPort & " | /usr/bin/tr -d '[:space:]'"
+			set numPort to trimmed as integer
+			if numPort > 0 and numPort < 65536 then return numPort
+		end try
+	end if
+	return serverPort
+end effectiveServerPort
+
+on effectiveWorkspacePath()
+	set customPath to configValueFor("WORKSPACE")
+	if customPath is not "" then return customPath
+	return workspacePath()
+end effectiveWorkspacePath
+
+on effectiveLogFilePath()
+	set customLog to configValueFor("LOG_FILE")
+	if customLog is not "" then return customLog
+	return logFilePath()
+end effectiveLogFilePath
+
+on effectiveDshCommand()
+	set customCommand to configValueFor("DSH_COMMAND")
+	if customCommand is not "" then return customCommand
+	return do shell script "if [ -x /opt/homebrew/bin/mise ]; then echo '/opt/homebrew/bin/mise exec -- dsh web --no-open'; elif [ -x /usr/local/bin/mise ]; then echo '/usr/local/bin/mise exec -- dsh web --no-open'; elif /usr/bin/command -v mise >/dev/null 2>&1; then echo 'mise exec -- dsh web --no-open'; else echo 'npx -y @deepseek-ai/dsh web --no-open'; fi"
+end effectiveDshCommand
+
+on effectiveChromeApp()
+	set customApp to configValueFor("CHROME_APP")
+	if customApp is not "" then
+		try
+			do shell script "/bin/test -d " & quoted form of customApp
+			return customApp
+		on error
+			display dialog "Configured Chrome app was not found (" & customApp & "). Falling back to search." buttons {"OK"} default button "OK" with icon note
+		end try
+	end if
+	return findChromeApp()
+end effectiveChromeApp
 
 on findChromeApp()
 	if resolvedChromeAppPath is not "" then
