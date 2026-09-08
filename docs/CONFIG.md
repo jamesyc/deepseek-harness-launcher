@@ -10,6 +10,7 @@ A commented template lives at `examples/config.example`.
 - Last occurrence of a key wins.
 - A leading `~/` in a value is expanded to your home folder.
 - Surrounding double quotes are stripped (useful for values with spaces).
+  An empty quoted value (`KEY=""`) counts as unset and falls back to the default.
 - Values may contain `=` (only the first `=` separates key from value).
 
 ```sh

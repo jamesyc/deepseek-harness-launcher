@@ -2,6 +2,7 @@
 # Copy to ~/.config/deepseek-harness-launcher/config and uncomment what you need.
 # Format: KEY=value, '#' comments allowed, last occurrence wins.
 # A leading ~/ is expanded to your home folder; surrounding double quotes are stripped.
+# An empty quoted value (KEY="") counts as unset and falls back to the default.
 #
 # SERVER_PORT=3080
 # WORKSPACE=~/.dsh/workspace
