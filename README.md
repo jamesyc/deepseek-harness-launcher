@@ -12,6 +12,7 @@ It starts the `dsh web` backend when the GUI starts, opens the Chrome-app wrappe
 - `scripts/verify.sh` — smoke-test for a built `.app` bundle.
 - `examples/config.example` — commented sample config.
 - `tests/` — shell tests + fixtures; `.github/workflows/ci.yml` runs them on macOS.
+- `docs/CONFIG.md` — full configuration reference.
 
 ## What the launcher does
 
@@ -37,30 +38,16 @@ Chrome-app search order: `~/Applications/<name>` → `~/Applications/Chrome Apps
 
 ## Configuration (optional)
 
-All settings have working defaults — no config file needed. To override, create
-`~/.config/deepseek-harness-launcher/config` as plain `KEY=value` lines
-(`#` comments allowed, last occurrence wins). A leading `~/` is expanded to your
-home folder, and surrounding double quotes are stripped.
+All settings have working defaults. To override, create
+`~/.config/deepseek-harness-launcher/config` — see `docs/CONFIG.md` for the full
+reference and `examples/config.example` for a template:
 
 ```sh
 # ~/.config/deepseek-harness-launcher/config
 SERVER_PORT=3080
 WORKSPACE=~/.dsh/workspace
-LOG_FILE=~/Library/Logs/DeepSeek Harness.log
 CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
-# DSH_COMMAND=npx -y @deepseek-ai/dsh web --no-open
 ```
-
-| Key | Overrides | Default |
-|---|---|---|
-| `SERVER_PORT` | `serverPort` property | `3080` (invalid values fall back silently) |
-| `WORKSPACE` | `~/.dsh/workspace` | Home-resolved default |
-| `LOG_FILE` | `~/Library/Logs/DeepSeek Harness.log` | Home-resolved default |
-| `CHROME_APP` | auto-search + file picker | If set but missing, a notice shows and search proceeds |
-| `DSH_COMMAND` | auto-detected `mise`/`npx` command | Used verbatim |
-
-Precedence: config file → built-in defaults. The file-picker cache
-(`resolvedChromeAppPath`) is only consulted when `CHROME_APP` is unset.
 
 ## Prerequisites
 
