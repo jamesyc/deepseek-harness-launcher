@@ -13,6 +13,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  fast:
+    # Pure-shell tests that run anywhere (no osacompile/plutil needed).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: command -v shellcheck >/dev/null 2>&1 || sudo apt-get install -y shellcheck
+      - name: Lint shell scripts
+        run: shellcheck scripts/*.sh tests/*.sh
+      - name: Run portable tests
+        run: bash tests/test_port_match.sh && bash tests/test_no_pipe_grep.sh && bash tests/test_safety.sh
+
   check:
     # osacompile/plutil/osadecompile only exist on macOS.
     # macos-latest intentionally floats: pinning a version label that
