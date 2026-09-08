@@ -29,10 +29,14 @@ if [ ! -f "$launcher_app/Contents/Info.plist" ]; then
 fi
 
 /usr/bin/plutil -lint "$launcher_app/Contents/Info.plist" >/dev/null
-if [ "$(/usr/bin/plutil -extract LSUIElement raw "$launcher_app/Contents/Info.plist" 2>/dev/null)" != "true" ]; then
-	echo "error: LSUIElement is not true (launcher would show a Dock icon)" >&2
-	exit 1
-fi
+# plutil prints bools as true/1/YES depending on OS version; accept all truthy forms.
+lsui_raw="$(/usr/bin/plutil -extract LSUIElement raw "$launcher_app/Contents/Info.plist" 2>/dev/null || true)"
+case "$(printf '%s' "$lsui_raw" | /usr/bin/tr '[:upper:]' '[:lower:]')" in
+	true|1|yes) ;;
+	*)
+		echo "error: LSUIElement is not true (launcher would show a Dock icon)" >&2
+		exit 1;;
+esac
 
 # Decompile once to a file; never pipe the producer into grep -q (SIGPIPE
 # under pipefail misfires — see tests/test_no_pipe_grep.sh).
@@ -58,7 +62,7 @@ if [ ! -f "$launcher_app/Contents/Resources/applet.icns" ]; then
 	exit 1
 fi
 
-if ! /usr/bin/codesign --verify --deep "$launcher_app" 2>/dev/null; then
+if ! /usr/bin/codesign --verify --deep --strict "$launcher_app" 2>/dev/null; then
 	echo "error: code signature invalid for $launcher_app" >&2
 	exit 1
 fi

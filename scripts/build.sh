@@ -57,6 +57,6 @@ rm -rf "$OUTPUT"
 
 # Fail the build here rather than at install/verify time.
 /usr/bin/plutil -lint "$OUTPUT/Contents/Info.plist" >/dev/null
-/usr/bin/codesign --verify --deep "$OUTPUT"
+/usr/bin/codesign --verify --deep --strict "$OUTPUT"
 
 echo "built: $OUTPUT"
