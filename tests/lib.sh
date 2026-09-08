@@ -41,3 +41,25 @@ lib_report() {
 	fi
 	echo "$1"
 }
+
+# File-backed grep assertions. Never `producer | grep -q` under `set -o
+# pipefail`: grep -q exits on first match, the producer then dies on SIGPIPE,
+# and pipefail reports failure even when the pattern matched (likewise,
+# `if ! producer | grep -q` misfires when the producer exits non-zero).
+# Capture output to a file first, then grep the file.
+# Usage: assert_file_contains <file> <pattern> <label>
+assert_file_contains() {
+	if ! grep -q "$2" "$1"; then
+		echo "error: $3: pattern [$2] not found in $1" >&2
+		LIB_FAILS=$((LIB_FAILS + 1))
+	fi
+}
+
+# Usage: assert_file_absent <file> <pattern> <label>
+assert_file_absent() {
+	if grep -q "$2" "$1"; then
+		echo "error: $3: unexpected pattern [$2] in $1" >&2
+		grep -n "$2" "$1" >&2 || true
+		LIB_FAILS=$((LIB_FAILS + 1))
+	fi
+}
