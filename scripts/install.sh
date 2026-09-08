@@ -47,7 +47,7 @@ fi
 
 if [ -d "$TO" ]; then
 	BACKUP="${TMPDIR:-/tmp}/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S).app"
-	cp -R "$TO" "$BACKUP"
+	/usr/bin/ditto "$TO" "$BACKUP"
 	echo "backed up existing app to: $BACKUP"
 	# The Chrome-app picker cache lives outside the bundle
 	# (~/Library/Application Support/...), so the transplant below preserves it.
@@ -58,7 +58,7 @@ if [ -d "$TO" ]; then
 		/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$TO/Contents/Info.plist"
 else
 	mkdir -p "$(dirname "$TO")"
-	cp -R "$FROM" "$TO"
+	/usr/bin/ditto "$FROM" "$TO"
 	echo "fresh install to: $TO"
 fi
 
