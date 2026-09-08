@@ -30,12 +30,24 @@ if [ ! -d "$FROM" ]; then
 	echo "error: build not found at $FROM (run ./scripts/build.sh first)" >&2
 	exit 1
 fi
+if [ ! -f "$FROM/Contents/Resources/Scripts/main.scpt" ]; then
+	echo "error: build at $FROM is incomplete (missing main.scpt; re-run ./scripts/build.sh)" >&2
+	exit 1
+fi
+if [ "$FROM" = "$TO" ]; then
+	echo "error: --from and --to are the same bundle ($FROM); refusing to install onto itself" >&2
+	exit 1
+fi
 
 if [ -d "$TO" ]; then
 	BACKUP="${TMPDIR:-/tmp}/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S).app"
 	cp -R "$TO" "$BACKUP"
 	echo "backed up existing app to: $BACKUP"
 	cp "$FROM/Contents/Resources/Scripts/main.scpt" "$TO/Contents/Resources/Scripts/main.scpt"
+	# The transplant keeps the old Info.plist (bundle ID/icon), but an
+	# install from before LSUIElement existed would keep its Dock icon too.
+	/usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$TO/Contents/Info.plist" >/dev/null 2>&1 || \
+		/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$TO/Contents/Info.plist"
 else
 	mkdir -p "$(dirname "$TO")"
 	cp -R "$FROM" "$TO"
