@@ -1,4 +1,4 @@
-# deepseek-harness-launcher
+# Deepseek Harness Launcher for macOS
 
 macOS AppleScript launcher for the DeepSeek harness (`npx @deepseek-ai/dsh web`).
 
