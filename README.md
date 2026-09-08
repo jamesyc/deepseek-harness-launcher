@@ -2,7 +2,7 @@
 
 macOS AppleScript launcher for the DeepSeek harness (`npx @deepseek-ai/dsh web`).
 
-It starts the `dsh web` backend when the GUI starts, opens the Chrome-app wrapper, and stops the backend when the GUI quits.
+It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens the Chrome-app wrapper, and stops the backend it started when the GUI quits.
 
 ## Components
 
@@ -17,8 +17,8 @@ It starts the `dsh web` backend when the GUI starts, opens the Chrome-app wrappe
 ## What the launcher does
 
 1. If another copy of the launcher is already running, focuses it and exits.
-2. Checks port `3080` (see `serverPort`). If something other than `@deepseek-ai/dsh` owns it, aborts with a dialog.
-3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log`.
+2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog.
+3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log` (truncated on each start).
 4. Waits (up to ~30s) for `http://127.0.0.1:3080/` to answer.
 5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID.
 6. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
@@ -115,6 +115,7 @@ Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescri
 | `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
 | `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
 | `resolvedChromeAppPath` | `""` | Leave empty; auto-filled after first file-picker use |
+| `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
 
 ## Note
 

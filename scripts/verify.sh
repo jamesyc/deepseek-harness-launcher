@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: ./verify-deepseek-harness-launcher.sh [launcher_app_path]
+# Usage: ./scripts/verify.sh [launcher_app_path]
 # Env override: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/Launcher.app
 launcher_app="${1:-${DEEPSEEK_HARNESS_LAUNCHER_APP:-$HOME/Applications/DeepSeek Harness Launcher.app}}"
 
