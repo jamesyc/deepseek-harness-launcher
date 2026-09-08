@@ -17,10 +17,7 @@ need_macos "osacompile missing"
 setup_tmp
 
 /usr/bin/osacompile -s -o "$TMP/check.app" "$ROOT/src/deepseek-harness-launcher.applescript"
-if /usr/bin/osadecompile "$TMP/check.app" | grep -q '/Users/'; then
-	echo "error: hardcoded /Users/ path in compiled output" >&2
-	/usr/bin/osadecompile "$TMP/check.app" | grep -n '/Users/' >&2 || true
-	exit 1
-fi
+/usr/bin/osadecompile "$TMP/check.app" > "$TMP/decompiled.txt"
+assert_file_absent "$TMP/decompiled.txt" '/Users/' "hardcoded-path-in-compiled-output"
 
-echo "no hardcoded paths"
+lib_report "no hardcoded paths"

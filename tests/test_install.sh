@@ -18,11 +18,9 @@ expect_fail() { # expect_fail <label> <command...>
 	fi
 }
 
-# --help exits 0; unknown args are rejected.
-if ! "$ROOT/scripts/install.sh" --help 2>/dev/null | grep -q 'Usage:'; then
-	echo "error: install-help: expected usage text" >&2
-	LIB_FAILS=$((LIB_FAILS + 1))
-fi
+# --help exits 0 and mentions usage; unknown args are rejected.
+"$ROOT/scripts/install.sh" --help >"$TMP/help.txt" 2>/dev/null
+assert_file_contains "$TMP/help.txt" 'Usage:' "install-help"
 expect_fail "install-unknown-arg" "$ROOT/scripts/install.sh" --bogus
 
 # Missing FROM fails with a actionable message.

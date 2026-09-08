@@ -34,15 +34,18 @@ for t in "${files[@]}"; do
 	output="$(env -u DEEPSEEK_HARNESS_CONFIG -u DEEPSEEK_HARNESS_LAUNCHER_APP bash "$t" 2>&1)"
 	status=$?
 	if [ $status -eq 0 ]; then
-		if printf '%s' "$output" | grep -q '^SKIP'; then
+		case "$output" in
+		SKIP*)
 			echo "SKIP $name"
 			printf '%s\n' "$output"
 			SKIP=$((SKIP + 1))
-		else
+			;;
+		*)
 			echo "PASS $name"
 			printf '%s\n' "$output"
 			PASS=$((PASS + 1))
-		fi
+			;;
+		esac
 	else
 		echo "FAIL $name"
 		printf '%s\n' "$output"

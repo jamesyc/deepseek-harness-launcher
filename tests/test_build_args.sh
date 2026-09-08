@@ -18,10 +18,8 @@ expect_fail() { # expect_fail <label> <command...>
 }
 
 # --help exits 0 and mentions usage.
-if ! "$ROOT/scripts/build.sh" --help 2>/dev/null | grep -q 'Usage:'; then
-	echo "error: build-help: expected usage text" >&2
-	LIB_FAILS=$((LIB_FAILS + 1))
-fi
+"$ROOT/scripts/build.sh" --help >"$TMP/help.txt" 2>/dev/null
+assert_file_contains "$TMP/help.txt" 'Usage:' "build-help"
 
 # Unknown args are rejected.
 expect_fail "build-unknown-arg" "$ROOT/scripts/build.sh" --bogus
