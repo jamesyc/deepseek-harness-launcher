@@ -1,0 +1,4 @@
+# Fixture: last occurrence wins; values may contain '='.
+SERVER_PORT=1111
+SERVER_PORT=2222
+DSH_COMMAND=echo a=b=c

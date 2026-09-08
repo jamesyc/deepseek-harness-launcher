@@ -20,9 +20,16 @@ ask() { # ask '<handler call>' -> prints handler result
 # Pure handlers (no config needed).
 check "unquoted" "/tmp/a b" "$(ask 'unquoted("\"/tmp/a b\"")')"
 check "unquoted-plain" "plain" "$(ask 'unquoted("plain")')"
+check "unquoted-empty-quotes-stays" '""' "$(ask 'unquoted("\"\"")')"
+check "unquoted-single-char" '"' "$(ask 'unquoted("\"")')"
+check "unquoted-empty" "" "$(ask 'unquoted("")')"
 check "expandedPath-tilde" "$HOME/work" "$(ask 'expandedPath("~/work")')"
 check "expandedPath-bare" "$HOME" "$(ask 'expandedPath("~")')"
+check "expandedPath-tilde-slash" "$HOME/" "$(ask 'expandedPath("~/")')"
 check "expandedPath-abs" "/tmp/x" "$(ask 'expandedPath("/tmp/x")')"
+check "expandedPath-otheruser-passthrough" "~otheruser/x" "$(ask 'expandedPath("~otheruser/x")')"
+check "expandedPath-relative-passthrough" "work/foo" "$(ask 'expandedPath("work/foo")')"
+check "expandedPath-empty" "" "$(ask 'expandedPath("")')"
 
 # Full fixture.
 export DEEPSEEK_HARNESS_CONFIG="$ROOT/tests/fixtures/config.full"
@@ -31,6 +38,58 @@ check "workspace" "$HOME/work/dsh-test" "$(ask 'effectiveWorkspacePath()')"
 check "logfile" "/tmp/dsh harness test.log" "$(ask 'effectiveLogFilePath()')"
 check "dsh-command" "echo fixture-command" "$(ask 'effectiveDshCommand()')"
 check "missing-key" "" "$(ask 'configValueFor("NO_SUCH_KEY")')"
+
+# Last occurrence wins; values may contain '='.
+export DEEPSEEK_HARNESS_CONFIG="$ROOT/tests/fixtures/config.dup-equals"
+check "last-wins" "2222" "$(ask 'effectiveServerPort()')"
+check "equals-in-value" "echo a=b=c" "$(ask 'effectiveDshCommand()')"
+
+# '#' comment lines are ignored.
+export DEEPSEEK_HARNESS_CONFIG="$ROOT/tests/fixtures/config.comments"
+check "comment-ignored" "3101" "$(ask 'effectiveServerPort()')"
+
+# Trailing comments are NOT stripped: value becomes invalid -> default port.
+printf '%s\n' 'SERVER_PORT=3099 # comment' > "$TMP/trailing.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/trailing.cfg"
+check "trailing-comment-fallback" "3080" "$(ask 'effectiveServerPort()')"
+
+# Keys with surrounding spaces do not match ('^KEY='): falls back.
+printf '%s\n' 'SERVER_PORT = 3099' > "$TMP/spaced.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/spaced.cfg"
+check "spaced-key-fallback" "3080" "$(ask 'effectiveServerPort()')"
+
+# Port boundaries and whitespace.
+probe_port() { # probe_port <file content> <label> <expected>
+	printf '%s\n' "$1" > "$TMP/probe.cfg"
+	export DEEPSEEK_HARNESS_CONFIG="$TMP/probe.cfg"
+	check "$2" "$3" "$(ask 'effectiveServerPort()')"
+}
+probe_port 'SERVER_PORT=0' "port-0-fallback" "3080"
+probe_port 'SERVER_PORT=-1' "port-negative-fallback" "3080"
+probe_port 'SERVER_PORT=65536' "port-65536-fallback" "3080"
+probe_port 'SERVER_PORT=99999' "port-99999-fallback" "3080"
+probe_port 'SERVER_PORT=bogus' "port-bogus-fallback" "3080"
+probe_port 'SERVER_PORT=' "port-empty-fallback" "3080"
+probe_port 'SERVER_PORT=1' "port-1-ok" "1"
+probe_port 'SERVER_PORT=65535' "port-65535-ok" "65535"
+probe_port 'SERVER_PORT=03099' "port-leading-zero" "3099"
+probe_port 'SERVER_PORT= 3099 ' "port-whitespace-trimmed" "3099"
+
+# Empty WORKSPACE falls back to the default.
+printf '%s\n' 'WORKSPACE=' > "$TMP/empty-ws.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/empty-ws.cfg"
+check "empty-workspace-fallback" "$HOME/.dsh/workspace" "$(ask 'effectiveWorkspacePath()')"
+
+# Single quotes are NOT stripped (only surrounding double quotes are).
+printf '%s\n' "DSH_COMMAND='echo hi'" > "$TMP/single.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/single.cfg"
+check "single-quotes-kept" "'echo hi'" "$(ask 'effectiveDshCommand()')"
+
+# Known quirk: WORKSPACE="" stays literal '""' instead of falling back.
+# Locked in so a future fix updates this assertion deliberately.
+printf '%s\n' 'WORKSPACE=""' > "$TMP/quoted-empty.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-empty.cfg"
+check "quoted-empty-quirk" '""' "$(ask 'effectiveWorkspacePath()')"
 
 # Invalid port falls back to the default.
 printf '%s\n' 'SERVER_PORT=bogus' > "$TMP/bad-port.cfg"

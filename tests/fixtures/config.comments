@@ -1,0 +1,5 @@
+# Fixture: comment handling.
+#SERVER_PORT=9999
+SERVER_PORT=3101
+# A trailing comment is part of the value (no inline-comment stripping),
+# so this key intentionally stays 3101 from the line above.
