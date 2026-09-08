@@ -21,9 +21,15 @@ while [ $# -gt 0 ]; do
 			TO="${1#--to=}"; shift;;
 		-h|--help)
 			echo "Usage: ./scripts/install.sh [--from PATH] [--to PATH]"; exit 0;;
-		*)
-			echo "error: unknown arg: $1" >&2; exit 1;;
+	*)
+		echo "error: unknown arg: $1" >&2; exit 1;;
 	esac
+done
+
+for tool in /usr/bin/ditto /usr/libexec/PlistBuddy /usr/bin/codesign; do
+	if [ ! -x "$tool" ]; then
+		echo "error: required tool missing: $tool" >&2; exit 1
+	fi
 done
 
 if [ ! -d "$FROM" ]; then

@@ -13,6 +13,12 @@ fi
 # Env override: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/Launcher.app
 launcher_app="${1:-${DEEPSEEK_HARNESS_LAUNCHER_APP:-$HOME/Applications/DeepSeek Harness Launcher.app}}"
 
+for tool in /usr/bin/plutil /usr/bin/osadecompile /usr/bin/codesign; do
+	if [ ! -x "$tool" ]; then
+		echo "error: required tool missing: $tool" >&2; exit 1
+	fi
+done
+
 if [ ! -d "$launcher_app" ]; then
 	echo "error: bundle not found at $launcher_app (run ./scripts/build.sh first, or pass the path)" >&2
 	exit 1
