@@ -9,8 +9,8 @@ test -d "$launcher_app"
 plutil -lint "$launcher_app/Contents/Info.plist"
 test "$(plutil -extract LSUIElement raw "$launcher_app/Contents/Info.plist")" = true
 
-# Decompile once into a file and grep the file. Never `osadecompile |
-# grep -q` here: under pipefail, grep -q exits on first match, osadecompile
+# Decompile once into a file and grep the file. Never pipe osadecompile into
+# grep -q here: under pipefail, grep -q exits on first match, osadecompile
 # then dies on SIGPIPE, and pipefail + set -e fails a bundle that matched.
 decompiled="$(mktemp)"
 trap 'rm -f "$decompiled"' EXIT

@@ -42,10 +42,10 @@ lib_report() {
 	echo "$1"
 }
 
-# File-backed grep assertions. Never `producer | grep -q` under `set -o
+# File-backed grep assertions. Never pipe a producer into grep -q under `set -o
 # pipefail`: grep -q exits on first match, the producer then dies on SIGPIPE,
 # and pipefail reports failure even when the pattern matched (likewise,
-# `if ! producer | grep -q` misfires when the producer exits non-zero).
+# negated pipe checks misfire when the producer exits non-zero).
 # Capture output to a file first, then grep the file.
 # Usage: assert_file_contains <file> <pattern> <label>
 assert_file_contains() {

@@ -52,7 +52,7 @@ cp -R "$TMP/v.app" "$TMP/poisoned.app"
 } > "$TMP/poison.applescript"
 /usr/bin/osacompile -o "$TMP/poisoned.app/Contents/Resources/Scripts/main.scpt" \
 	"$TMP/poison.applescript"
-# NOTE: capture to a file instead of `verify | grep` — pipefail would report
+# NOTE: capture to a file instead of piping into grep — pipefail would report
 # verify's exit 1 even when grep matches.
 if "$ROOT/scripts/verify.sh" "$TMP/poisoned.app" >"$TMP/poison-out.txt" 2>&1; then
 	echo "error: verify-hardcoded-users: expected failure, got success" >&2
