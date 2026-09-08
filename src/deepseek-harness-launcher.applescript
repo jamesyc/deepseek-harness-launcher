@@ -52,7 +52,18 @@ on run
 		end repeat
 
 		if serverReady is false then
-			display dialog "DeepSeek Harness did not start. See " & logFile buttons {"OK"} default button "OK" with icon stop
+			set logTail to ""
+			try
+				set logTail to do shell script "/usr/bin/tail -n 20 " & quoted form of logFile & " 2>/dev/null || true"
+			end try
+			if logTail is not "" then
+				set userChoice to button returned of (display dialog "DeepSeek Harness did not start." & return & return & "Last log lines:" & return & logTail buttons {"Show Log", "OK"} default button "OK" with icon stop)
+				if userChoice is "Show Log" then
+					do shell script "/usr/bin/open " & quoted form of logFile
+				end if
+			else
+				display dialog "DeepSeek Harness did not start. See " & logFile buttons {"OK"} default button "OK" with icon stop
+			end if
 			quit
 			return
 		end if
