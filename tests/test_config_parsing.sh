@@ -21,7 +21,7 @@ ask() { # ask '<handler call>' -> prints handler result
 # Pure handlers (no config needed).
 check "unquoted" "/tmp/a b" "$(ask 'unquoted("\"/tmp/a b\"")')"
 check "unquoted-plain" "plain" "$(ask 'unquoted("plain")')"
-check "unquoted-empty-quotes-stays" '""' "$(ask 'unquoted("\"\"")')"
+check "unquoted-empty-quotes-is-empty" "" "$(ask 'unquoted("\"\"")')"
 check "unquoted-single-char" '"' "$(ask 'unquoted("\"")')"
 check "unquoted-empty" "" "$(ask 'unquoted("")')"
 check "expandedPath-tilde" "$HOME/work" "$(ask 'expandedPath("~/work")')"
@@ -86,11 +86,21 @@ printf '%s\n' "DSH_COMMAND='echo hi'" > "$TMP/single.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/single.cfg"
 check "single-quotes-kept" "'echo hi'" "$(ask 'effectiveDshCommand()')"
 
-# Known quirk: WORKSPACE="" stays literal '""' instead of falling back.
-# Locked in so a future fix updates this assertion deliberately.
+# Empty quoted values count as unset and fall back to defaults.
 printf '%s\n' 'WORKSPACE=""' > "$TMP/quoted-empty.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-empty.cfg"
-check "quoted-empty-quirk" '""' "$(ask 'effectiveWorkspacePath()')"
+check "quoted-empty-workspace-fallback" "$HOME/.dsh/workspace" "$(ask 'effectiveWorkspacePath()')"
+printf '%s\n' 'LOG_FILE=""' > "$TMP/quoted-empty-log.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-empty-log.cfg"
+check "quoted-empty-logfile-fallback" "$HOME/Library/Logs/DeepSeek Harness.log" "$(ask 'effectiveLogFilePath()')"
+printf '%s\n' 'SERVER_PORT=""' > "$TMP/quoted-empty-port.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-empty-port.cfg"
+check "quoted-empty-port-fallback" "3080" "$(ask 'effectiveServerPort()')"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/does-not-exist.cfg"
+default_dsh="$(ask 'effectiveDshCommand()')"
+printf '%s\n' 'DSH_COMMAND=""' > "$TMP/quoted-empty-dsh.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/quoted-empty-dsh.cfg"
+check "quoted-empty-dsh-fallback" "$default_dsh" "$(ask 'effectiveDshCommand()')"
 
 # Invalid port falls back to the default.
 printf '%s\n' 'SERVER_PORT=bogus' > "$TMP/bad-port.cfg"

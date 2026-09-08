@@ -185,7 +185,12 @@ end expandedPath
 
 on unquoted(theValue)
 	set trimmed to theValue
-	if trimmed starts with "\"" and trimmed ends with "\"" and (length of trimmed) ≥ 2 then
+	-- An empty quoted pair is empty, not a literal '""': text 2 thru -2 of a
+	-- 2-char string does not yield "" in AppleScript, so handle it directly.
+	if trimmed is "\"\"" then
+		return ""
+	end if
+	if trimmed starts with "\"" and trimmed ends with "\"" and (length of trimmed) > 2 then
 		set trimmed to text 2 thru -2 of trimmed
 	end if
 	return trimmed
