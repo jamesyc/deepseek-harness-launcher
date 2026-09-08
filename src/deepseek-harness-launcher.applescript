@@ -16,7 +16,7 @@ on run
 	-- Pure shell (no System Events), so no extra Automation permission prompt.
 	set myBundle to POSIX path of (path to me)
 	if myBundle ends with "/" then set myBundle to text 1 thru -2 of myBundle
-	set instanceCount to (do shell script "/bin/ps -axo command= | /usr/bin/grep -F " & quoted form of myBundle & " | /usr/bin/grep -v grep | /usr/bin/wc -l | /usr/bin/tr -d ' '") as integer
+	set instanceCount to (do shell script "/bin/ps -axww -o command= | /usr/bin/grep -F " & quoted form of myBundle & " | /usr/bin/grep -v grep | /usr/bin/wc -l | /usr/bin/tr -d ' '") as integer
 	if instanceCount > 1 then
 		do shell script "/usr/bin/open " & quoted form of myBundle
 		quit
@@ -29,31 +29,39 @@ on run
 	set logFile to effectiveLogFilePath()
 	set checkURL to "http://127.0.0.1:" & portText & "/"
 
-	set existingPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true"
-	if existingPID is not "" then
+	set existingPIDs to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null || true"
+	if existingPIDs is not "" then
 		-- Accept the npx form (@deepseek-ai/dsh) or the binary form (dsh web).
 		-- Word boundaries keep this strict: a mere mention of dsh in some
 		-- other program's command line must not be mistaken for the server.
-		set isDshServer to false
-		try
-			do shell script "/bin/ps -p " & existingPID & " -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
-			set isDshServer to true
-		end try
-		if isDshServer is false then
+		-- Check every listener (IPv4/IPv6 doubles): adopt the first dsh
+		-- match, and only abort when none of them is the server.
+		set adoptedPID to ""
+		repeat with candidatePID in paragraphs of existingPIDs
+			if candidatePID is not "" then
+				try
+					-- -ww avoids truncating long mise/npx command lines.
+					do shell script "/bin/ps -p " & candidatePID & " -ww -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
+					set adoptedPID to candidatePID
+					exit repeat
+				end try
+			end if
+		end repeat
+		if adoptedPID is "" then
 			display dialog "Port " & portText & " is already in use by another program." buttons {"OK"} default button "OK" with icon stop
 			quit
 			return
 		end if
 		-- Adopt the running server: track it so idle notices if it dies,
 		-- but ownsServer stays false so quit never kills what it didn't start.
-		set serverPID to existingPID
+		set serverPID to adoptedPID
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
 		-- Fresh log per run so a failure dialog shows this attempt, not history.
 		set logDir to do shell script "/usr/bin/dirname " & quoted form of logFile
 		do shell script "/bin/mkdir -p " & quoted form of logDir & "; : > " & quoted form of logFile & " || true"
 		set dshCommand to effectiveDshCommand()
-		set launchCommand to "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
+		set launchCommand to "cd " & quoted form of wsPath & " && /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
 		set serverPID to do shell script launchCommand
 		set ownsServer to true
 
@@ -87,7 +95,7 @@ on run
 
 		-- Re-resolve the listener PID, but keep the launch PID as fallback:
 		-- an empty or failed lsof must never blank serverPID (orphaned server).
-		set freshPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN | /usr/bin/head -n 1 || true"
+		set freshPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true"
 		if freshPID is not "" then set serverPID to freshPID
 	end if
 
@@ -97,11 +105,14 @@ on run
 		return
 	end if
 	set loaderPath to chromeLoaderPathFor(chromeApp)
+	-- NOTE (verified Sep 2026): app_mode_loader persists while the Chrome app
+	-- window is open and exits a few seconds after quit, so idle may take one
+	-- extra cycle to notice. Do not "fix" by tracking the main Chrome process.
 
 	do shell script "/usr/bin/open " & quoted form of chromeApp
 
 	repeat 40 times
-		set chromePID to do shell script "/bin/ps -axo pid=,command= | /usr/bin/grep -F " & quoted form of loaderPath & " | /usr/bin/grep -v grep | /usr/bin/awk 'NR == 1 { print $1 }' || true"
+		set chromePID to do shell script "/bin/ps -axww -o pid=,command= | /usr/bin/grep -F " & quoted form of loaderPath & " | /usr/bin/grep -v grep | /usr/bin/awk 'NR == 1 { print $1 }' || true"
 		if chromePID is not "" then exit repeat
 		delay 0.25
 	end repeat
@@ -144,7 +155,12 @@ on quit
 				exit repeat
 			end try
 		end repeat
-		do shell script "/bin/kill -KILL " & serverPID & " 2>/dev/null || true"
+		-- Only escalate to KILL if TERM did not work, so a dead PID that was
+		-- already reused by an unrelated process is never signalled.
+		try
+			do shell script "/bin/kill -0 " & serverPID
+			do shell script "/bin/kill -KILL " & serverPID & " 2>/dev/null || true"
+		end try
 	end if
 	continue quit
 end quit
