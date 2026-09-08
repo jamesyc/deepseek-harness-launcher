@@ -52,6 +52,12 @@ if [ -d "$TO" ]; then
 	BACKUP="${TMPDIR:-/tmp}/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S).app"
 	/usr/bin/ditto "$TO" "$BACKUP"
 	echo "backed up existing app to: $BACKUP"
+	# Keep only the 5 newest backups; best-effort, never fails the install.
+	BACKUP_DIR="${TMPDIR:-/tmp}"
+	# shellcheck disable=SC2012
+	ls -dt "$BACKUP_DIR"/DeepSeek-Harness-Launcher-backup-*.app 2>/dev/null | tail -n +6 | while IFS= read -r old; do
+		rm -rf "$old" || true
+	done || true
 	# The Chrome-app picker cache lives outside the bundle
 	# (~/Library/Application Support/...), so the transplant below preserves it.
 	cp "$FROM/Contents/Resources/Scripts/main.scpt" "$TO/Contents/Resources/Scripts/main.scpt"
