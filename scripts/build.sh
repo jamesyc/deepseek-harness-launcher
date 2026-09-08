@@ -21,9 +21,18 @@ done
 
 OUTPUT="${OUTPUT:-$ROOT/build/DeepSeek Harness Launcher.app}"
 : "${OUTPUT:?}"
-# Never let `rm -rf "$OUTPUT"` below point at / or $HOME.
-case "$OUTPUT" in
-	"/"|"$HOME")
+# Never let `rm -rf "$OUTPUT"` below point at a system dir or $HOME.
+# Require a .app suffix (blocks /, /tmp, bare dirs) and compare the
+# canonical path so symlinks, trailing slashes, and `..` can't bypass it.
+stripped="${OUTPUT%/}"
+case "$stripped" in
+	*.app) ;;
+	*)
+		echo "error: refusing to build into $OUTPUT (must end in .app)" >&2; exit 1;;
+esac
+canon="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$stripped" 2>/dev/null || printf '%s' "$stripped")"
+case "$canon" in
+	"/"|"$HOME"|"/Applications"|"/System"|"/System/"*)
 		echo "error: refusing to build into $OUTPUT" >&2; exit 1;;
 esac
 
