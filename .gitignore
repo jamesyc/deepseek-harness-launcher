@@ -10,7 +10,8 @@
 *.scpt
 *.scptd/
 *.app/
-applet.icns
+build/**/applet.icns
+*.app/**/applet.icns
 
 # Build output
 build/
