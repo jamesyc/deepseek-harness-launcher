@@ -339,7 +339,9 @@ on configValueFor(keyName)
 		-- SERVER_PORT. Last occurrence wins; values may contain '='.
 		-- Outer [space/tab/CR] trimmed so 'KEY=  ~/x  ' and CRLF files work.
 		-- Key syntax stays strict (^KEY=, no export/spaces) by design.
-		set rawVal to do shell script "/usr/bin/awk -F= -v key=" & quoted form of keyName & " '$1 == key { v = substr($0, length($1) + 2) } END { gsub(/^[ \\t\\r]+|[ \\t\\r]+$/, \"\", v); print v }' " & quoted form of cfg & " || true"
+		-- LC_ALL=C pins byte-wise matching so a UTF-8 BOM never equals
+		-- a bare key (macOS awk strips BOM under en_US.UTF-8).
+		set rawVal to do shell script "LC_ALL=C /usr/bin/awk -F= -v key=" & quoted form of keyName & " '$1 == key { v = substr($0, length($1) + 2) } END { gsub(/^[ \\t\\r]+|[ \\t\\r]+$/, \"\", v); print v }' " & quoted form of cfg & " || true"
 	on error
 		return ""
 	end try
