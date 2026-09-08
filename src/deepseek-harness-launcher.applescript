@@ -58,7 +58,7 @@ on run
 		quit
 		return
 	end if
-	set loaderPath to chromeApp & "/Contents/MacOS/app_mode_loader"
+	set loaderPath to chromeLoaderPathFor(chromeApp)
 
 	do shell script "/usr/bin/open " & quoted form of chromeApp
 
@@ -213,6 +213,18 @@ on effectiveChromeApp()
 	end if
 	return findChromeApp()
 end effectiveChromeApp
+
+on chromeLoaderPathFor(chromeApp)
+	-- Read the real executable name instead of assuming app_mode_loader,
+	-- which may change across Chrome versions.
+	try
+		set execName to do shell script "/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' " & quoted form of (chromeApp & "/Contents/Info.plist")
+		if execName is "" then error "empty executable name"
+		return chromeApp & "/Contents/MacOS/" & execName
+	on error
+		return chromeApp & "/Contents/MacOS/app_mode_loader"
+	end try
+end chromeLoaderPathFor
 
 on findChromeApp()
 	if resolvedChromeAppPath is not "" then
