@@ -40,7 +40,10 @@ if [ ! -f "$FROM/Contents/Resources/Scripts/main.scpt" ]; then
 	echo "error: build at $FROM is incomplete (missing main.scpt; re-run ./scripts/build.sh)" >&2
 	exit 1
 fi
-if [ "$FROM" = "$TO" ]; then
+# Canonicalize so symlinks, relative paths, and trailing slashes can't
+# disguise installing a bundle onto itself.
+canon() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1" 2>/dev/null || printf '%s' "$1"; }
+if [ "$(canon "${FROM%/}")" = "$(canon "${TO%/}")" ]; then
 	echo "error: --from and --to are the same bundle ($FROM); refusing to install onto itself" >&2
 	exit 1
 fi
