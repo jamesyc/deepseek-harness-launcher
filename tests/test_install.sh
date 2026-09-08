@@ -92,4 +92,24 @@ fi
 	LIB_FAILS=$((LIB_FAILS + 1))
 }
 
+# Update with a populated picker cache prints the reset note (and still
+# verifies: the cache is deliberately not restored, since a cached
+# /Users/<name>/ path would trip verify's no-hardcoded-paths gate).
+cp -R "$TMP/from.app" "$TMP/cacheto.app"
+sed 's|^property resolvedChromeAppPath : ""|property resolvedChromeAppPath : "/tmp/cached-choice"|' \
+	"$ROOT/src/deepseek-harness-launcher.applescript" > "$TMP/cache.applescript"
+/usr/bin/osacompile -o "$TMP/cacheto.app/Contents/Resources/Scripts/main.scpt" \
+	"$TMP/cache.applescript" >/dev/null
+/usr/bin/codesign --force --deep --sign - "$TMP/cacheto.app" >/dev/null 2>&1
+if ! "$ROOT/scripts/install.sh" --from "$TMP/from.app" --to "$TMP/cacheto.app" >"$TMP/cache-out.txt" 2>&1; then
+	echo "error: install-cache-update: command failed" >&2
+	cat "$TMP/cache-out.txt" >&2 || true
+	LIB_FAILS=$((LIB_FAILS + 1))
+else
+	if ! grep -q 'file-picker choice was reset' "$TMP/cache-out.txt"; then
+		echo "error: install-cache-update: expected picker-reset note" >&2
+		LIB_FAILS=$((LIB_FAILS + 1))
+	fi
+fi
+
 lib_report "install ok"

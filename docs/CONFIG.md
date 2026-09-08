@@ -6,7 +6,9 @@ A commented template lives at `examples/config.example`.
 
 ## Format
 
-- One `KEY=value` per line; `#` starts a comment.
+- One `KEY=value` per line, exactly (no spaces around `=`, no `export` prefix).
+- Full-line `#` comments only (a line starting with `#`); trailing `#`
+  comments are NOT stripped and will invalidate the value.
 - Last occurrence of a key wins.
 - A leading `~/` in a value is expanded to your home folder.
 - Surrounding double quotes are stripped (useful for values with spaces).

@@ -5,14 +5,24 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     # osacompile/plutil/osadecompile only exist on macOS.
+    # macos-latest intentionally floats: pinning a version label that
+    # no longer exists breaks CI harder than SDK drift does here.
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install shellcheck
-        run: brew install shellcheck
+        run: brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh tests/*.sh
       - name: Run tests

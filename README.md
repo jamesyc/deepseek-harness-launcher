@@ -19,7 +19,7 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 1. If another copy of the launcher is already running, focuses it and exits.
 2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog.
 3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log` (truncated on each start).
-4. Waits (up to ~30s) for `http://127.0.0.1:3080/` to answer.
+4. Waits (up to ~90s worst case: 60 tries × 1s curl timeout + 0.5s delay) for `http://127.0.0.1:3080/` to answer.
 5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID.
 6. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
 7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits.
@@ -69,7 +69,8 @@ Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
 
 Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
 File → Save as Application, check Stay open, name it `DeepSeek Harness Launcher`,
-save to `~/Applications/`.
+save to `~/Applications/`. (The manual app shows a Dock icon — `LSUIElement`
+is only added by `build.sh`.)
 
 ## Install
 
@@ -114,8 +115,32 @@ Edit the `property` lines at the top of `src/deepseek-harness-launcher.applescri
 |---|---|---|
 | `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
 | `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
-| `resolvedChromeAppPath` | `""` | Leave empty; auto-filled after first file-picker use |
+| `resolvedChromeAppPath` | `""` | Leave empty; auto-filled after first file-picker use. Reset on every reinstall — set `CHROME_APP` in the config file for a persistent choice |
 | `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
+
+## Uninstall
+
+```sh
+rm -rf ~/Applications/"DeepSeek Harness Launcher.app"
+# optional: config, log, workspace
+rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/.dsh/workspace
+```
+
+`install.sh` leaves timestamped backups in `$TMPDIR`
+(`DeepSeek-Harness-Launcher-backup-*.app`); delete them when done.
+
+## Troubleshooting
+
+- **"Port 3080 is already in use"** — another program owns the port. Stop it
+  or set `SERVER_PORT` in the config (the Chrome app must target the same port).
+- **"DeepSeek Harness did not start"** — check the tail of the log:
+  `tail -n 50 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
+- **File picker reappears after update** — reinstalls reset the picker's
+  cached path. Set `CHROME_APP` in the config file instead.
+- **No Automation permission prompt is expected** — the launcher avoids
+  System Events by design.
+- `DEEPSEEK_HARNESS_CONFIG` only takes effect when launching from a terminal;
+  Finder launches don't inherit shell environment.
 
 ## Note
 
