@@ -20,8 +20,15 @@ on run
 
 	set existingPID to do shell script "/usr/sbin/lsof -nP -tiTCP:" & portText & " -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true"
 	if existingPID is not "" then
-		set existingCommand to do shell script "/bin/ps -p " & existingPID & " -o command="
-		if existingCommand does not contain "@deepseek-ai/dsh" then
+		-- Accept the npx form (@deepseek-ai/dsh) or the binary form (dsh web).
+		-- Word boundaries keep this strict: a mere mention of dsh in some
+		-- other program's command line must not be mistaken for the server.
+		set isDshServer to false
+		try
+			do shell script "/bin/ps -p " & existingPID & " -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
+			set isDshServer to true
+		end try
+		if isDshServer is false then
 			display dialog "Port " & portText & " is already in use by another program." buttons {"OK"} default button "OK" with icon stop
 			quit
 			return
