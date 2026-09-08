@@ -61,7 +61,11 @@ on run
 		set logDir to do shell script "/usr/bin/dirname " & quoted form of logFile
 		do shell script "/bin/mkdir -p " & quoted form of logDir & "; : > " & quoted form of logFile & " || true"
 		set dshCommand to effectiveDshCommand()
-		set launchCommand to "cd " & quoted form of wsPath & " && /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
+		set launchCommand to launchCommandFor(wsPath, dshCommand, logFile)
+		-- Must return instantly; a hang here stalls run forever (no Chrome,
+		-- no idle, no quit handling). Guaranteed by launchCommandFor's shell
+		-- grammar -- see its comment. (Note: `with timeout` does NOT bound
+		-- `do shell script`, so it cannot guard this call.)
 		set serverPID to do shell script launchCommand
 		set ownsServer to true
 
@@ -164,6 +168,18 @@ on quit
 	end if
 	continue quit
 end quit
+
+on launchCommandFor(wsPath, dshCommand, logFile)
+	-- Assemble the background-launch shell line. Grammar is load-bearing:
+	-- `do shell script` reads stdout until EOF, so the backgrounded unit must
+	-- hold NO pipe file descriptors. With `;`, `&` binds only to the simple
+	-- `nohup` command whose stdin/stdout/stderr are all redirected, and the
+	-- call returns instantly. With `&&`, `&` would bind to the whole AND-list,
+	-- forcing a subshell that holds the pipe open until the server exits, and
+	-- `run` would stall forever (Sep 2026 regression: no Chrome, no idle,
+	-- orphaned server). NEVER join the cd with && here.
+	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
+end launchCommandFor
 
 on homeDirectory()
 	set homePath to POSIX path of (path to home folder)
