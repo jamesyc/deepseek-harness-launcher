@@ -64,7 +64,9 @@ CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 ./scripts/build.sh --output /tmp/"DeepSeek Harness Launcher.app"
 ```
 
-This compiles `src/`, embeds `assets/applet.icns`, adds `LSUIElement=true` (no Dock icon), and re-signs.
+This compiles `src/`, embeds `assets/applet.icns`, stamps canonical identity
+from `assets/bundle-identity` (display name, icon file, `LSUIElement=true`
+for no Dock icon; no `CFBundleIdentifier` by design), and re-signs.
 Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
 
 Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
@@ -79,8 +81,9 @@ is only added by `build.sh`.)
 # ./scripts/install.sh --from /tmp/My.app --to ~/Applications/"DeepSeek Harness Launcher.app"
 ```
 
-Updates an existing install by transplanting only `main.scpt` + `applet.icns`
-(keeps bundle ID and plist), or fresh-copies the build if none exists. Backs up the old bundle to
+Replaces any existing install with a full copy of the build — identity and
+icon ship from source (`assets/bundle-identity`, `assets/applet.icns`), so
+nothing in the old bundle is kept. Backs up the old bundle to
 `$TMPDIR` first, then re-signs and verifies.
 
 ## Verify
@@ -92,7 +95,7 @@ Updates an existing install by transplanting only `main.scpt` + `applet.icns`
 # or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./scripts/verify.sh
 ```
 
-Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/Chrome-app/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, and `applet.icns` exists.
+Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/Chrome-app/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`).
 
 ## Testing
 

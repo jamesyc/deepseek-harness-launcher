@@ -1,7 +1,9 @@
 #!/bin/bash
 # Install DeepSeek Harness Launcher.app into ~/Applications.
-# Preserves the existing bundle's ID/plist by transplanting only the
-# freshly built main.scpt and applet.icns, then re-signs and verifies.
+# Full-copy install: backs up any existing bundle to $TMPDIR, replaces it
+# with the fresh build, then re-signs and verifies. Bundle identity and the
+# icon ship from source (assets/bundle-identity, assets/applet.icns), so a
+# full copy is always correct — nothing in the old bundle is worth keeping.
 # Usage: ./scripts/install.sh [--from PATH] [--to PATH]
 set -euo pipefail
 
@@ -26,7 +28,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-for tool in /usr/bin/ditto /usr/libexec/PlistBuddy /usr/bin/codesign; do
+for tool in /usr/bin/ditto /usr/bin/codesign; do
 	if [ ! -x "$tool" ]; then
 		echo "error: required tool missing: $tool" >&2; exit 1
 	fi
@@ -51,7 +53,20 @@ if [ "$(canon "${FROM%/}")" = "$(canon "${TO%/}")" ]; then
 	echo "error: --from and --to are the same bundle ($FROM); refusing to install onto itself" >&2
 	exit 1
 fi
+# The install below does `rm -rf "$TO"`, so refuse system locations and
+# non-.app targets the same way build.sh refuses dangerous outputs.
+canon_to="$(canon "${TO%/}")"
+case "$canon_to" in
+	*.app) ;;
+	*)
+		echo "error: refusing to install into $TO (must end in .app)" >&2; exit 1;;
+esac
+case "$canon_to" in
+	"/"|"$HOME"|"/Applications"|"/System"|"/System/"*)
+		echo "error: refusing to install into $TO" >&2; exit 1;;
+esac
 
+had_existing=0
 if [ -d "$TO" ]; then
 	BACKUP="${TMPDIR:-/tmp}/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S).app"
 	/usr/bin/ditto "$TO" "$BACKUP"
@@ -62,19 +77,15 @@ if [ -d "$TO" ]; then
 	ls -dt "$BACKUP_DIR"/DeepSeek-Harness-Launcher-backup-*.app 2>/dev/null | tail -n +6 | while IFS= read -r old; do
 		rm -rf "$old" || true
 	done || true
-	# The Chrome-app picker cache lives outside the bundle
-	# (~/Library/Application Support/...), so the transplant below preserves it.
-	cp "$FROM/Contents/Resources/Scripts/main.scpt" "$TO/Contents/Resources/Scripts/main.scpt"
-	# The icon is source-of-truth in assets/ and embedded by build.sh, so
-	# carry it over too (a stale pre-whale icon would trip verify.sh).
-	cp "$FROM/Contents/Resources/applet.icns" "$TO/Contents/Resources/applet.icns"
-	# The transplant keeps the old Info.plist (bundle ID), but an
-	# install from before LSUIElement existed would keep its Dock icon too.
-	/usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$TO/Contents/Info.plist" >/dev/null 2>&1 || \
-		/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$TO/Contents/Info.plist"
+	had_existing=1
+	rm -rf "$TO"
+fi
+
+mkdir -p "$(dirname "$TO")"
+/usr/bin/ditto "$FROM" "$TO"
+if [ "$had_existing" -eq 1 ]; then
+	echo "updated existing app at: $TO"
 else
-	mkdir -p "$(dirname "$TO")"
-	/usr/bin/ditto "$FROM" "$TO"
 	echo "fresh install to: $TO"
 fi
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/install.sh: fresh install, update transplant, backup, and errors.
+# scripts/install.sh: fresh install, full-copy update, backup, and errors.
 # Everything runs under $TMP via --from/--to; never touches ~/Applications.
 set -euo pipefail
 
@@ -7,6 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 # shellcheck source=lib.sh
 . "$ROOT/tests/lib.sh"
+# shellcheck disable=SC1091 # sourced data file, not a linted script
+. "$ROOT/assets/bundle-identity"
 
 need_macos "osacompile missing"
 setup_tmp
@@ -48,15 +50,22 @@ test -f "$TMP/to.app/Contents/Resources/Scripts/main.scpt" || {
 	LIB_FAILS=$((LIB_FAILS + 1))
 }
 
-# Update: pre-seed TO with a sentinel plist key + stale main.scpt, so the
-# test proves only main.scpt is transplanted (bundle ID/icon/plist kept).
+# Update: pre-seed TO with a sentinel plist key, a rogue identifier, a wrong
+# display name, and stale main.scpt/icon, so the test proves the full copy
+# replaces everything (stale state gone, FROM state present).
 # NOTE: osacompile applets carry no CFBundleIdentifier, so use a custom key.
 /usr/libexec/PlistBuddy -c "Add :SentinelPreserved string yes" \
 	"$TMP/to.app/Contents/Info.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.example.stale" \
+	"$TMP/to.app/Contents/Info.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" \
+	"$TMP/to.app/Contents/Info.plist" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Stale Name" \
+	"$TMP/to.app/Contents/Info.plist" >/dev/null
 /usr/bin/osacompile -o "$TMP/to.app/Contents/Resources/Scripts/main.scpt" \
 	-e 'display dialog "old"' >/dev/null
-# Seed a stale icon too, so the test proves applet.icns is transplanted
-# alongside main.scpt (not silently preserved).
+# Seed a stale icon too, so the test proves applet.icns is replaced
+# (not silently preserved).
 printf 'stale-icon' > "$TMP/to.app/Contents/Resources/applet.icns"
 /usr/bin/codesign --force --deep --sign - "$TMP/to.app" >/dev/null 2>&1
 
@@ -71,23 +80,35 @@ else
 		echo "error: install-update: expected backup message" >&2
 		LIB_FAILS=$((LIB_FAILS + 1))
 	}
+	grep -q 'updated existing app at:' "$TMP/update-out.txt" || {
+		echo "error: install-update: expected updated message" >&2
+		LIB_FAILS=$((LIB_FAILS + 1))
+	}
 fi
 
-# Sentinel plist key survived the update...
-if [ "$(/usr/libexec/PlistBuddy -c "Print :SentinelPreserved" "$TMP/to.app/Contents/Info.plist" 2>/dev/null)" != "yes" ]; then
-	echo "error: install-update: sentinel plist key not preserved" >&2
+# Stale sentinel plist key is gone after the full copy...
+if /usr/libexec/PlistBuddy -c "Print :SentinelPreserved" "$TMP/to.app/Contents/Info.plist" >/dev/null 2>&1; then
+	echo "error: install-update: stale sentinel plist key survived (expected full replacement)" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
-# ...and main.scpt now matches FROM byte-for-byte (transplant)...
+# ...the rogue identifier is gone...
+if /usr/bin/plutil -extract CFBundleIdentifier raw "$TMP/to.app/Contents/Info.plist" >/dev/null 2>&1; then
+	echo "error: install-update: stale CFBundleIdentifier survived (expected full replacement)" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+# ...and the display name now matches the canonical identity.
+check "install-update-display-name" "$BUNDLE_DISPLAY_NAME" \
+	"$(/usr/bin/plutil -extract CFBundleDisplayName raw "$TMP/to.app/Contents/Info.plist" 2>/dev/null || true)"
+# ...and main.scpt now matches FROM byte-for-byte...
 if ! cmp -s "$TMP/from.app/Contents/Resources/Scripts/main.scpt" \
 	"$TMP/to.app/Contents/Resources/Scripts/main.scpt"; then
-	echo "error: install-update: main.scpt was not transplanted from FROM" >&2
+	echo "error: install-update: main.scpt does not match FROM" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
-# ...and applet.icns now matches FROM byte-for-byte (transplant)...
+# ...and applet.icns now matches FROM byte-for-byte...
 if ! cmp -s "$TMP/from.app/Contents/Resources/applet.icns" \
 	"$TMP/to.app/Contents/Resources/applet.icns"; then
-	echo "error: install-update: applet.icns was not transplanted from FROM" >&2
+	echo "error: install-update: applet.icns does not match FROM" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
 # ...and a backup bundle was left in TMPDIR.

@@ -57,6 +57,51 @@ elif ! grep -q 'does not match assets/applet.icns' "$TMP/badicon-out.txt"; then
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
 
+# Bundle with a CFBundleIdentifier fails at the identity gate (re-signed so
+# the signature check can't mask it).
+cp -R "$TMP/v.app" "$TMP/withid.app"
+/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.example.test" \
+	"$TMP/withid.app/Contents/Info.plist" >/dev/null
+/usr/bin/codesign --force --deep --sign - "$TMP/withid.app" >/dev/null 2>&1
+if "$ROOT/scripts/verify.sh" "$TMP/withid.app" >"$TMP/withid-out.txt" 2>&1; then
+	echo "error: verify-identifier-absent: expected failure, got success" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+elif ! grep -q 'CFBundleIdentifier must be absent' "$TMP/withid-out.txt"; then
+	echo "error: verify-identifier-absent: wrong error message:" >&2
+	cat "$TMP/withid-out.txt" >&2 || true
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
+# Bundle with the wrong display name fails at the identity gate.
+cp -R "$TMP/v.app" "$TMP/badname.app"
+/usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" \
+	"$TMP/badname.app/Contents/Info.plist" >/dev/null 2>&1 || true
+/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Wrong Name" \
+	"$TMP/badname.app/Contents/Info.plist" >/dev/null
+/usr/bin/codesign --force --deep --sign - "$TMP/badname.app" >/dev/null 2>&1
+if "$ROOT/scripts/verify.sh" "$TMP/badname.app" >"$TMP/badname-out.txt" 2>&1; then
+	echo "error: verify-display-name: expected failure, got success" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+elif ! grep -q 'CFBundleDisplayName' "$TMP/badname-out.txt"; then
+	echo "error: verify-display-name: wrong error message:" >&2
+	cat "$TMP/badname-out.txt" >&2 || true
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
+# Bundle with CFBundleIconName present fails at the identity gate.
+cp -R "$TMP/v.app" "$TMP/withiconname.app"
+/usr/libexec/PlistBuddy -c "Add :CFBundleIconName string applet" \
+	"$TMP/withiconname.app/Contents/Info.plist" >/dev/null
+/usr/bin/codesign --force --deep --sign - "$TMP/withiconname.app" >/dev/null 2>&1
+if "$ROOT/scripts/verify.sh" "$TMP/withiconname.app" >"$TMP/withiconname-out.txt" 2>&1; then
+	echo "error: verify-iconname-absent: expected failure, got success" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+elif ! grep -q 'CFBundleIconName must be absent' "$TMP/withiconname-out.txt"; then
+	echo "error: verify-iconname-absent: wrong error message:" >&2
+	cat "$TMP/withiconname-out.txt" >&2 || true
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
 # Bundle that is otherwise valid but contains a /Users/ path fails
 # at the hardcoded-path gate specifically (not an earlier string check).
 cp -R "$TMP/v.app" "$TMP/poisoned.app"

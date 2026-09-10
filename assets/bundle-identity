@@ -1,0 +1,7 @@
+# Canonical bundle identity for DeepSeek Harness Launcher.
+# Single source of truth, sourced by scripts/build.sh, scripts/verify.sh,
+# and tests/test_build_identity.sh.
+# NOTE: CFBundleIdentifier is intentionally absent. Stock osacompile applets
+# carry none and nothing references one.
+BUNDLE_DISPLAY_NAME="DeepSeek Harness Launcher"
+BUNDLE_ICON_FILE="applet.icns"

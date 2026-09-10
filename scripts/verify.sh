@@ -75,6 +75,36 @@ if ! cmp -s "$reference_icon" "$launcher_app/Contents/Resources/applet.icns"; th
 	exit 1
 fi
 
+# Canonical bundle identity from assets/bundle-identity (single source of
+# truth shared with build.sh).
+if [ ! -f "$ROOT/assets/bundle-identity" ]; then
+	echo "error: bundle identity missing at $ROOT/assets/bundle-identity" >&2
+	exit 1
+fi
+# shellcheck disable=SC1091 # sourced data file, not a linted script
+. "$ROOT/assets/bundle-identity"
+
+# CFBundleIdentifier must be absent by design (nothing references one).
+if /usr/bin/plutil -extract CFBundleIdentifier raw "$launcher_app/Contents/Info.plist" >/dev/null 2>&1; then
+	echo 'error: CFBundleIdentifier must be absent (remove it; see assets/bundle-identity)' >&2
+	exit 1
+fi
+display_name="$(/usr/bin/plutil -extract CFBundleDisplayName raw "$launcher_app/Contents/Info.plist" 2>/dev/null || true)"
+if [ "$display_name" != "$BUNDLE_DISPLAY_NAME" ]; then
+	echo "error: CFBundleDisplayName [$display_name] != [$BUNDLE_DISPLAY_NAME]" >&2
+	exit 1
+fi
+icon_file="$(/usr/bin/plutil -extract CFBundleIconFile raw "$launcher_app/Contents/Info.plist" 2>/dev/null || true)"
+if [ "$icon_file" != "$BUNDLE_ICON_FILE" ]; then
+	echo "error: CFBundleIconFile [$icon_file] != [$BUNDLE_ICON_FILE]" >&2
+	exit 1
+fi
+# CFBundleIconName must be absent (CFBundleIconFile rules).
+if /usr/bin/plutil -extract CFBundleIconName raw "$launcher_app/Contents/Info.plist" >/dev/null 2>&1; then
+	echo 'error: CFBundleIconName must be absent (CFBundleIconFile rules)' >&2
+	exit 1
+fi
+
 if ! /usr/bin/codesign --verify --deep --strict "$launcher_app" 2>/dev/null; then
 	echo "error: code signature invalid for $launcher_app" >&2
 	exit 1
