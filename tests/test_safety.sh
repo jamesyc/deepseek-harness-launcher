@@ -44,8 +44,15 @@ refuse_self() { # refuse_self <label> <to>
 		LIB_FAILS=$((LIB_FAILS + 1))
 	fi
 }
-refuse_self "install-refuses-symlink-self" "$TMP/self-link.app"
-refuse_self "install-refuses-trailing-slash-self" "$TMP/self.app/"
+# The self-guard sits behind install.sh's required-tools check (ditto,
+# codesign: macOS-only), so skip just this block elsewhere. The quit
+# simulations below are the portable core of this file and always run.
+if [ ! -x /usr/bin/ditto ] || [ ! -x /usr/bin/codesign ]; then
+	echo "note: SKIP install-refuses-self (macOS tools missing), other checks below ran"
+else
+	refuse_self "install-refuses-symlink-self" "$TMP/self-link.app"
+	refuse_self "install-refuses-trailing-slash-self" "$TMP/self.app/"
+fi
 
 # quit escalation, simulated: cooperative sleeper dies on TERM;
 # TERM-ignoring sleeper survives TERM and needs KILL (mirrors on quit).
