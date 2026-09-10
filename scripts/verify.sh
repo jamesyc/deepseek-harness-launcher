@@ -9,8 +9,6 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 	exit 0
 fi
 
-# Usage: ./scripts/verify.sh [launcher_app_path]
-# Env override: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/Launcher.app
 launcher_app="${1:-${DEEPSEEK_HARNESS_LAUNCHER_APP:-$HOME/Applications/DeepSeek Harness Launcher.app}}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
