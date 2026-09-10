@@ -26,13 +26,26 @@ expect_fail "build-refuses-tmpdir" "$ROOT/scripts/build.sh" --output /tmp
 expect_fail "build-refuses-no-suffix" "$ROOT/scripts/build.sh" --output "$TMP/notanapp"
 expect_fail "build-refuses-home-slash" "$ROOT/scripts/build.sh" --output "$HOME/"
 
-# install.sh self-install guard via stub bundles (no compile needed:
-# the guard runs after the FROM existence checks, which stubs satisfy).
+# install.sh self-install guard via stub bundles (no compile needed: the
+# stubs satisfy the FROM completeness checks so the self-guard is what
+# fires). Assert the message, not just failure, so a completeness error
+# can't masquerade as the guard.
 mkdir -p "$TMP/self.app/Contents/Resources/Scripts"
 touch "$TMP/self.app/Contents/Resources/Scripts/main.scpt"
+touch "$TMP/self.app/Contents/Resources/applet.icns"
 ln -sfn "$TMP/self.app" "$TMP/self-link.app"
-expect_fail "install-refuses-symlink-self" "$ROOT/scripts/install.sh" --from "$TMP/self.app" --to "$TMP/self-link.app"
-expect_fail "install-refuses-trailing-slash-self" "$ROOT/scripts/install.sh" --from "$TMP/self.app" --to "$TMP/self.app/"
+refuse_self() { # refuse_self <label> <to>
+	if "$ROOT/scripts/install.sh" --from "$TMP/self.app" --to "$2" >"$TMP/self-$1.txt" 2>&1; then
+		echo "error: $1: expected failure, got success" >&2
+		LIB_FAILS=$((LIB_FAILS + 1))
+	elif ! grep -q 'refusing to install onto itself' "$TMP/self-$1.txt"; then
+		echo "error: $1: wrong error message:" >&2
+		cat "$TMP/self-$1.txt" >&2 || true
+		LIB_FAILS=$((LIB_FAILS + 1))
+	fi
+}
+refuse_self "install-refuses-symlink-self" "$TMP/self-link.app"
+refuse_self "install-refuses-trailing-slash-self" "$TMP/self.app/"
 
 # quit escalation, simulated: cooperative sleeper dies on TERM;
 # TERM-ignoring sleeper survives TERM and needs KILL (mirrors on quit).
