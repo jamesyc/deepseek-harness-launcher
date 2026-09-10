@@ -55,6 +55,9 @@ test -f "$TMP/to.app/Contents/Resources/Scripts/main.scpt" || {
 	"$TMP/to.app/Contents/Info.plist" >/dev/null
 /usr/bin/osacompile -o "$TMP/to.app/Contents/Resources/Scripts/main.scpt" \
 	-e 'display dialog "old"' >/dev/null
+# Seed a stale icon too, so the test proves applet.icns is transplanted
+# alongside main.scpt (not silently preserved).
+printf 'stale-icon' > "$TMP/to.app/Contents/Resources/applet.icns"
 /usr/bin/codesign --force --deep --sign - "$TMP/to.app" >/dev/null 2>&1
 
 export TMPDIR="$TMP/tmpdir"
@@ -79,6 +82,12 @@ fi
 if ! cmp -s "$TMP/from.app/Contents/Resources/Scripts/main.scpt" \
 	"$TMP/to.app/Contents/Resources/Scripts/main.scpt"; then
 	echo "error: install-update: main.scpt was not transplanted from FROM" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+# ...and applet.icns now matches FROM byte-for-byte (transplant)...
+if ! cmp -s "$TMP/from.app/Contents/Resources/applet.icns" \
+	"$TMP/to.app/Contents/Resources/applet.icns"; then
+	echo "error: install-update: applet.icns was not transplanted from FROM" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
 # ...and a backup bundle was left in TMPDIR.

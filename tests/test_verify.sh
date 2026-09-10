@@ -43,6 +43,20 @@ cp -R "$TMP/v.app" "$TMP/noicon.app"
 rm "$TMP/noicon.app/Contents/Resources/applet.icns"
 expect_fail "verify-missing-icon" "$ROOT/scripts/verify.sh" "$TMP/noicon.app"
 
+# Bundle with a foreign icon fails at the icon gate specifically
+# (re-signed so the signature check can't mask it).
+cp -R "$TMP/v.app" "$TMP/badicon.app"
+printf 'not-an-icon' > "$TMP/badicon.app/Contents/Resources/applet.icns"
+/usr/bin/codesign --force --deep --sign - "$TMP/badicon.app" >/dev/null 2>&1
+if "$ROOT/scripts/verify.sh" "$TMP/badicon.app" >"$TMP/badicon-out.txt" 2>&1; then
+	echo "error: verify-foreign-icon: expected failure, got success" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+elif ! grep -q 'does not match assets/applet.icns' "$TMP/badicon-out.txt"; then
+	echo "error: verify-foreign-icon: wrong error message:" >&2
+	cat "$TMP/badicon-out.txt" >&2 || true
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
 # Bundle that is otherwise valid but contains a /Users/ path fails
 # at the hardcoded-path gate specifically (not an earlier string check).
 cp -R "$TMP/v.app" "$TMP/poisoned.app"

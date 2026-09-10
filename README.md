@@ -64,7 +64,7 @@ CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 ./scripts/build.sh --output /tmp/"DeepSeek Harness Launcher.app"
 ```
 
-This compiles `src/`, adds `LSUIElement=true` (no Dock icon), and re-signs.
+This compiles `src/`, embeds `assets/applet.icns`, adds `LSUIElement=true` (no Dock icon), and re-signs.
 Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
 
 Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
@@ -79,8 +79,8 @@ is only added by `build.sh`.)
 # ./scripts/install.sh --from /tmp/My.app --to ~/Applications/"DeepSeek Harness Launcher.app"
 ```
 
-Updates an existing install by transplanting only `main.scpt` (keeps bundle ID
-and icon), or fresh-copies the build if none exists. Backs up the old bundle to
+Updates an existing install by transplanting only `main.scpt` + `applet.icns`
+(keeps bundle ID and plist), or fresh-copies the build if none exists. Backs up the old bundle to
 `$TMPDIR` first, then re-signs and verifies.
 
 ## Verify

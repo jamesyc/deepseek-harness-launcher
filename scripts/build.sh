@@ -47,6 +47,14 @@ rm -rf "$OUTPUT"
 
 /usr/bin/osacompile -s -o "$OUTPUT" "$ROOT/src/deepseek-harness-launcher.applescript"
 
+# Embed the checked-in custom icon so fresh builds (and fresh installs)
+# carry the whale instead of osacompile's stock script icon. Fail here
+# rather than shipping a build with the wrong icon.
+if [ ! -f "$ROOT/assets/applet.icns" ]; then
+	echo "error: custom icon missing: $ROOT/assets/applet.icns" >&2; exit 1
+fi
+cp "$ROOT/assets/applet.icns" "$OUTPUT/Contents/Resources/applet.icns"
+
 # osacompile-built stay-open applets lack LSUIElement (Dock icon); add it so
 # the launcher runs without a Dock icon, then re-sign (editing Info.plist
 # invalidates the original signature). Set-or-Add survives template changes

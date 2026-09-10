@@ -12,6 +12,7 @@ fi
 # Usage: ./scripts/verify.sh [launcher_app_path]
 # Env override: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/Launcher.app
 launcher_app="${1:-${DEEPSEEK_HARNESS_LAUNCHER_APP:-$HOME/Applications/DeepSeek Harness Launcher.app}}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 for tool in /usr/bin/plutil /usr/bin/osadecompile /usr/bin/codesign; do
 	if [ ! -x "$tool" ]; then
@@ -59,6 +60,18 @@ fi
 
 if [ ! -f "$launcher_app/Contents/Resources/applet.icns" ]; then
 	echo "error: applet.icns missing in $launcher_app" >&2
+	exit 1
+fi
+
+# The icon must match the checked-in source of truth byte-for-byte.
+# A mismatch means a stale (pre-whale / pre-16x16) or foreign icon shipped.
+reference_icon="$ROOT/assets/applet.icns"
+if [ ! -f "$reference_icon" ]; then
+	echo "error: reference icon missing at $reference_icon" >&2
+	exit 1
+fi
+if ! cmp -s "$reference_icon" "$launcher_app/Contents/Resources/applet.icns"; then
+	echo 'error: applet.icns does not match assets/applet.icns (stale or foreign icon; rebuild via ./scripts/build.sh)' >&2
 	exit 1
 fi
 

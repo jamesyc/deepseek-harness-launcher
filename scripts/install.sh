@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install DeepSeek Harness Launcher.app into ~/Applications.
-# Preserves the existing bundle's ID/icon/plist by transplanting only the
-# freshly built main.scpt, then re-signs and verifies.
+# Preserves the existing bundle's ID/plist by transplanting only the
+# freshly built main.scpt and applet.icns, then re-signs and verifies.
 # Usage: ./scripts/install.sh [--from PATH] [--to PATH]
 set -euo pipefail
 
@@ -40,6 +40,10 @@ if [ ! -f "$FROM/Contents/Resources/Scripts/main.scpt" ]; then
 	echo "error: build at $FROM is incomplete (missing main.scpt; re-run ./scripts/build.sh)" >&2
 	exit 1
 fi
+if [ ! -f "$FROM/Contents/Resources/applet.icns" ]; then
+	echo "error: build at $FROM is incomplete (missing applet.icns; re-run ./scripts/build.sh)" >&2
+	exit 1
+fi
 # Canonicalize so symlinks, relative paths, and trailing slashes can't
 # disguise installing a bundle onto itself.
 canon() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1" 2>/dev/null || printf '%s' "$1"; }
@@ -61,7 +65,10 @@ if [ -d "$TO" ]; then
 	# The Chrome-app picker cache lives outside the bundle
 	# (~/Library/Application Support/...), so the transplant below preserves it.
 	cp "$FROM/Contents/Resources/Scripts/main.scpt" "$TO/Contents/Resources/Scripts/main.scpt"
-	# The transplant keeps the old Info.plist (bundle ID/icon), but an
+	# The icon is source-of-truth in assets/ and embedded by build.sh, so
+	# carry it over too (a stale pre-whale icon would trip verify.sh).
+	cp "$FROM/Contents/Resources/applet.icns" "$TO/Contents/Resources/applet.icns"
+	# The transplant keeps the old Info.plist (bundle ID), but an
 	# install from before LSUIElement existed would keep its Dock icon too.
 	/usr/libexec/PlistBuddy -c "Set :LSUIElement true" "$TO/Contents/Info.plist" >/dev/null 2>&1 || \
 		/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$TO/Contents/Info.plist"

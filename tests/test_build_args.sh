@@ -37,6 +37,10 @@ for app in "$TMP/space.app" "$TMP/eq.app"; do
 		echo "error: LSUIElement != true in $app" >&2
 		LIB_FAILS=$((LIB_FAILS + 1))
 	fi
+	if ! cmp -s "$ROOT/assets/applet.icns" "$app/Contents/Resources/applet.icns"; then
+		echo "error: applet.icns != assets/applet.icns in $app" >&2
+		LIB_FAILS=$((LIB_FAILS + 1))
+	fi
 	if ! /usr/bin/codesign --verify --deep "$app" 2>/dev/null; then
 		echo "error: codesign verify failed for $app" >&2
 		LIB_FAILS=$((LIB_FAILS + 1))
