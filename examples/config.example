@@ -7,5 +7,6 @@
 # SERVER_PORT=3080
 # WORKSPACE=~/.dsh/workspace
 # LOG_FILE=~/Library/Logs/DeepSeek Harness.log
-# CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 # DSH_COMMAND=npx -y @deepseek-ai/dsh web --no-open
+# NOTE: the launcher appends --port 0 unless DSH_COMMAND already sets --port
+# (the window opens the scraped server URL directly).

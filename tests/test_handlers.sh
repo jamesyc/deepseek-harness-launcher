@@ -1,6 +1,6 @@
 #!/bin/bash
-# Cover home/path handlers, chrome loader resolution, and DSH command
-# selection that test_config_parsing.sh does not exercise.
+# Cover home/path handlers and DSH command selection that
+# test_config_parsing.sh does not exercise.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,8 +17,8 @@ SCPT="$TMP/handlers.scpt"
 ask() { # ask '<handler call>' -> prints handler result
 	/usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e "tell h to $1"
 }
-ask_noenv() { # ask without the config/cache overrides (tests live defaults)
-	env -u DEEPSEEK_HARNESS_CONFIG -u DEEPSEEK_HARNESS_CACHE /usr/bin/osascript \
+ask_noenv() { # ask without the config override (tests live defaults)
+	env -u DEEPSEEK_HARNESS_CONFIG /usr/bin/osascript \
 		-e "set h to load script POSIX file \"$SCPT\"" -e "tell h to $1"
 }
 
@@ -31,15 +31,6 @@ check "logfile-default" "$HOME/Library/Logs/DeepSeek Harness.log" "$(ask_noenv '
 export DEEPSEEK_HARNESS_CONFIG="/tmp/custom.cfg"
 check "config-override-exact" "/tmp/custom.cfg" "$(ask 'configFilePath()')"
 check "config-default" "$HOME/.config/deepseek-harness-launcher/config" "$(ask_noenv 'configFilePath()')"
-
-# chromeLoaderPathFor(): reads CFBundleExecutable, falls back to app_mode_loader.
-mkdir -p "$TMP/Fake.app/Contents/MacOS"
-/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string CustomLoader" "$TMP/Fake.app/Contents/Info.plist" >/dev/null
-touch "$TMP/Fake.app/Contents/MacOS/CustomLoader"
-check "loader-from-plist" "$TMP/Fake.app/Contents/MacOS/CustomLoader" "$(ask "chromeLoaderPathFor(\"$TMP/Fake.app\")")"
-
-mkdir -p "$TMP/Plain.app/Contents/MacOS"
-check "loader-fallback" "$TMP/Plain.app/Contents/MacOS/app_mode_loader" "$(ask "chromeLoaderPathFor(\"$TMP/Plain.app\")")"
 
 # effectiveDshCommand(): default is environment-dependent (Apple Silicon mise,
 # Intel mise, PATH mise, npx fallback), but always contains the server args.
@@ -66,27 +57,6 @@ check "home-honors-env" "$TMP/fakehome" "$(HOME="$TMP/fakehome" /usr/bin/osascri
 mkdir -p "$TMP/fakehome"
 check "workspace-fakehome" "$TMP/fakehome/.dsh/workspace" "$(HOME="$TMP/fakehome" /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to workspacePath()')"
 
-# CHROME_APP with ~/ expands under a fake HOME; nothing touches the real $HOME.
-mkdir -p "$TMP/fakehome/.tmp-chrome-handler-test.app"
-printf '%s\n' 'CHROME_APP=~/.tmp-chrome-handler-test.app' > "$TMP/chrome-tilde.cfg"
-check "chrome-tilde-expands" "$TMP/fakehome/.tmp-chrome-handler-test.app" "$(HOME="$TMP/fakehome" DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-tilde.cfg" /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to effectiveChromeApp()')"
-
-# chromeCacheFile(): override vs live default.
-export DEEPSEEK_HARNESS_CACHE="$TMP/chrome-cache.txt"
-check "cache-override-exact" "$TMP/chrome-cache.txt" "$(ask 'chromeCacheFile()')"
-check "cache-default" "$HOME/Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath" "$(env -u DEEPSEEK_HARNESS_CACHE /usr/bin/osascript -e "set h to load script POSIX file \"$SCPT\"" -e 'tell h to chromeCacheFile()')"
-
-# write/read round-trip (600 perms) + findChromeApp prefers the file cache.
-mkdir -p "$TMP/Cached.app"
-export DEEPSEEK_HARNESS_CACHE="$TMP/chrome-cache.txt"
-ask "writeChromeCache(\"$TMP/Cached.app\")" >/dev/null
-check "cache-roundtrip" "$TMP/Cached.app" "$(ask 'readChromeCache()')"
-check "find-prefers-cache" "$TMP/Cached.app" "$(ask 'findChromeApp()')"
-if [ "$(stat -f %A "$TMP/chrome-cache.txt")" != "600" ]; then
-	echo "error: cache-perms: expected 600" >&2
-	LIB_FAILS=$((LIB_FAILS + 1))
-fi
-
 # serverCheckURLs(): both loopback families.
 check "server-urls" "http://127.0.0.1:3080/, http://[::1]:3080/" "$(ask 'serverCheckURLs("3080")')"
 
@@ -98,11 +68,5 @@ test ! -f "$TMP/rot-small.log.1" || { echo "error: rotate-small: unexpected .1" 
 python3 -c "open('$TMP/rot-big.log','wb').write(b'x'*6000000)"
 ask "rotateLogIfNeeded(\"$TMP/rot-big.log\")" >/dev/null
 test -f "$TMP/rot-big.log.1" || { echo "error: rotate-big: .1 missing" >&2; LIB_FAILS=$((LIB_FAILS + 1)); }
-
-# chromePidForLoader(): runs against live ps; just assert it exits 0 and prints PID-or-empty.
-ask "chromePidForLoader(\"$TMP/Cached.app/Contents/MacOS/app_mode_loader\")" >/dev/null || {
-	echo "error: chrome-pid-handler failed" >&2
-	LIB_FAILS=$((LIB_FAILS + 1))
-}
 
 lib_report "handlers ok"

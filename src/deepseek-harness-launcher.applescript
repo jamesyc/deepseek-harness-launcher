@@ -1,17 +1,16 @@
 property serverPID : ""
 property chromePID : ""
 property ownsServer : false
-property resolvedChromeAppPath : ""
 
 property serverPort : 3080
-property chromeAppName : "DeepSeek Harness.app"
 property configRelPath : ".config/deepseek-harness-launcher/config"
-property chromeCacheRelPath : "Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath"
+property chromeProfileRelPath : "Library/Application Support/DeepSeek Harness Launcher/ChromeProfile"
 
 on run
 	set serverPID to ""
 	set chromePID to ""
 	set ownsServer to false
+	set targetURL to ""
 
 	-- Single-instance guard: a second launch just focuses the running one.
 	-- Pure shell (no System Events), so no extra Automation permission prompt.
@@ -41,6 +40,29 @@ on run
 		-- Adopt the running server: track it so idle notices if it dies,
 		-- but ownsServer stays false so quit never kills what it didn't start.
 		set serverPID to adoptedPID
+		-- Pick the window URL: a bare 200 is an old server, a 401 is the
+		-- token fence (rejected below -- the token is unknowable for a
+		-- server we didn't start), anything else keeps legacy leniency.
+		set code4 to bareStatusCode(item 1 of checkURLs)
+		if code4 is "200" then
+			set targetURL to item 1 of checkURLs
+		else if code4 is "401" then
+			set targetURL to ""
+		else
+			set code6 to bareStatusCode(item 2 of checkURLs)
+			if code6 is "200" then
+				set targetURL to item 2 of checkURLs
+			else if code6 is "401" then
+				set targetURL to ""
+			else
+				set targetURL to item 1 of checkURLs
+			end if
+		end if
+		if targetURL is "" then
+			display dialog "The running DeepSeek Harness server requires authentication. Stop it and relaunch, letting the launcher start the server — or open the token URL printed by 'dsh web' yourself." buttons {"OK"} default button "OK" with icon stop
+			quit
+			return
+		end if
 	else
 		do shell script "/bin/mkdir -p " & quoted form of wsPath
 		-- Fresh log per run so a failure dialog shows this attempt, not history.
@@ -50,6 +72,12 @@ on run
 		rotateLogIfNeeded(logFile)
 		do shell script ": > " & quoted form of logFile & " || true"
 		set dshCommand to effectiveDshCommand()
+		-- The window opens the scraped server URL directly, so let the OS
+		-- pick the server port; an override that already sets --port is
+		-- left alone.
+		if dshCommand does not contain "--port" then
+			set dshCommand to dshCommand & " --port 0"
+		end if
 		set launchCommand to launchCommandFor(wsPath, dshCommand, logFile)
 		-- Must return instantly; a hang here stalls run forever (no Chrome,
 		-- no idle, no quit handling). Guaranteed by launchCommandFor's shell
@@ -58,17 +86,20 @@ on run
 		set serverPID to do shell script launchCommand
 		set ownsServer to true
 
+		-- Wait for the `dsh web: <url>` startup line, then probe that URL.
+		-- Old servers print a bare URL, new ones a token URL; probing the
+		-- printed URL verbatim serves both, so no version check is needed.
 		set serverReady to false
-		repeat 60 times
-			try
-				-- Probe IPv4 then IPv6: lsof matches listeners on either
-				-- family, but curl to 127.0.0.1 fails if dsh bound ::1 only.
-				do shell script "/usr/bin/curl --fail --silent --max-time 1 " & quoted form of item 1 of checkURLs & " >/dev/null || /usr/bin/curl --fail --silent --max-time 1 " & quoted form of item 2 of checkURLs & " >/dev/null"
-				set serverReady to true
-				exit repeat
-			on error
-				delay 0.5
-			end try
+		repeat 90 times
+			set targetURL to serverURLFromLog(logFile)
+			if targetURL starts with "http" then
+				try
+					do shell script "/usr/bin/curl --fail --silent --max-time 1 " & quoted form of targetURL & " >/dev/null"
+					set serverReady to true
+					exit repeat
+				end try
+			end if
+			delay 0.5
 		end repeat
 
 		if serverReady is false then
@@ -91,30 +122,42 @@ on run
 		-- Re-resolve the listener PID, but keep the launch PID as fallback:
 		-- an empty, failed, or non-dsh lsof must never blank serverPID
 		-- (orphaned server) or retarget it at an unrelated process.
-		set resolvedPID to resolveServerPid(portText, serverPID)
+		-- The server listens on the scraped URL's port (--port 0 above).
+		set actualPort to portOfURL(targetURL)
+		if actualPort is "" then set actualPort to portText
+		set resolvedPID to resolveServerPid(actualPort, serverPID)
 		if resolvedPID is not "" then set serverPID to resolvedPID
 	end if
 
-	set chromeApp to effectiveChromeApp()
-	if chromeApp is "" then
+	set sourceApp to chromeBinary()
+	if sourceApp is "" then
+		display dialog "Google Chrome was not found. Install it, then relaunch." buttons {"OK"} default button "OK" with icon stop
 		quit
 		return
 	end if
-	set loaderPath to chromeLoaderPathFor(chromeApp)
-	-- NOTE (verified Sep 2026): app_mode_loader persists while the Chrome app
-	-- window is open and exits a few seconds after quit, so idle may take one
-	-- extra cycle to notice. Do not "fix" by tracking the main Chrome process.
+	-- A crash orphan may still hold the dedicated profile (Chrome refuses a
+	-- second instance on one profile); stop it before launching.
+	stopStaleAppWindows(chromeProfileDir())
 
-	do shell script "/usr/bin/open " & quoted form of chromeApp
-
-	repeat 40 times
-		set chromePID to chromePidForLoader(loaderPath)
-		if chromePID is not "" then exit repeat
-		delay 0.25
+	-- Chromeless --app window in the dedicated profile, opened directly on
+	-- the target URL (bare or token-bearing): single origin throughout, so
+	-- no tab strip. Direct-exec only -- `open -a` would merge into the
+	-- running browser and drop --user-data-dir. $! is the browser process,
+	-- which exits with its last window, so the idle cascade keeps working.
+	set chromePID to do shell script appWindowCommandFor(sourceApp, chromeProfileDir(), targetURL, wsPath, logFile)
+	set windowReady to false
+	repeat 10 times
+		try
+			do shell script "/bin/kill -0 " & chromePID
+			set windowReady to true
+			exit repeat
+		on error
+			delay 0.25
+		end try
 	end repeat
 
-	if chromePID is "" then
-		display dialog "The DeepSeek Harness Chrome app did not open." buttons {"OK"} default button "OK" with icon stop
+	if windowReady is false then
+		display dialog "The DeepSeek Harness window did not open." buttons {"OK"} default button "OK" with icon stop
 		quit
 	end if
 end run
@@ -158,6 +201,8 @@ on quit
 			do shell script "/bin/kill -KILL " & serverPID & " 2>/dev/null || true"
 		end try
 	end if
+	-- The window is left open (as the Chrome app was before it): a crash
+	-- orphan is stopped by stopStaleAppWindows at the next launch.
 	continue quit
 end quit
 
@@ -192,6 +237,92 @@ on launchCommandFor(wsPath, dshCommand, logFile)
 	-- orphaned server). NEVER join the cd with && here.
 	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & dshCommand & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
 end launchCommandFor
+
+on serverURLFromLog(logFile)
+	-- Scrape the most recent `dsh web: <url>` startup line. Old servers print
+	-- a bare URL, new ones a token URL; the caller probes it verbatim, so no
+	-- version check is needed. Returns "" when nothing is found yet.
+	try
+		set foundURL to do shell script "/usr/bin/grep -o 'dsh web: http[^ ]*' " & quoted form of logFile & " 2>/dev/null | /usr/bin/tail -n 1 | /usr/bin/sed 's/^dsh web: //' || true"
+		if foundURL starts with "http" then return foundURL
+		return ""
+	on error
+		return ""
+	end try
+end serverURLFromLog
+
+on portOfURL(targetURL)
+	-- Extract the port from a scraped `dsh web: http://host:PORT/...` URL so
+	-- the listener PID can be re-resolved on the server's real (possibly
+	-- OS-picked) port. Returns "" when there is nothing to parse.
+	try
+		return do shell script "/usr/bin/printf %s " & quoted form of targetURL & " | /usr/bin/sed -n -E 's#^https?://[^:/]+:([0-9]+).*#\\1#p' || true"
+	on error
+		return ""
+	end try
+end portOfURL
+
+on bareStatusCode(checkURL)
+	-- Bare-URL status for the adopted-server token check: 200 is an old
+	-- server, 401 is the token fence, 000 is an unreachable race (the caller
+	-- treats it as legacy, preserving the old adopt-blindly behavior).
+	try
+		return do shell script "/usr/bin/curl --silent --output /dev/null --write-out '%{http_code}' --max-time 2 " & quoted form of checkURL & " || true"
+	on error
+		return "000"
+	end try
+end bareStatusCode
+
+on chromeBinary()
+	-- Direct-exec Chrome path (never `open -a`: that merges into the running
+	-- browser and drops --user-data-dir/--app).
+	set candidates to {"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", homeDirectory() & "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+	repeat with candidate in candidates
+		try
+			do shell script "/bin/test -x " & quoted form of candidate
+			return candidate as text
+		end try
+	end repeat
+	return ""
+end chromeBinary
+
+on chromeProfileDir()
+	-- Dedicated profile for the --app window: separate process from the
+	-- user's browser (Chrome singletons per profile), so the window's
+	-- lifetime is PID-trackable. Honors $HOME via homeDirectory, so tests
+	-- stay hermetic. Stable across launches, so UI prefs persist.
+	return homeDirectory() & "/" & chromeProfileRelPath
+end chromeProfileDir
+
+on appWindowCommandFor(chromeBin, profileDir, targetURL, wsPath, logFile)
+	-- Assemble the --app-window launch line. Same load-bearing grammar as
+	-- launchCommandFor: `;` + `&` on the simple nohup unit, all fds
+	-- redirected, so `do shell script` returns instantly with $! -- and $!
+	-- is the browser process itself, which exits with its last window.
+	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & quoted form of chromeBin & " --user-data-dir=" & quoted form of profileDir & " --no-first-run --no-default-browser-check --app=" & quoted form of targetURL & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
+end appWindowCommandFor
+
+on stopStaleAppWindows(profileDir)
+	-- A crash orphan may still hold the dedicated profile (Chrome refuses a
+	-- second instance on one profile, showing a blocking dialog). TERM, wait,
+	-- then KILL stragglers. pkill/pgrep never match themselves, so no
+	-- self-kill dance is needed.
+	set flagMatch to "--user-data-dir=" & profileDir
+	try
+		do shell script "/usr/bin/pkill -TERM -f -- " & quoted form of flagMatch & " 2>/dev/null || true"
+	end try
+	repeat 10 times
+		try
+			do shell script "/usr/bin/pgrep -f -- " & quoted form of flagMatch & " >/dev/null && exit 1 || exit 0"
+			exit repeat
+		on error
+			delay 0.5
+		end try
+	end repeat
+	try
+		do shell script "/usr/bin/pkill -KILL -f -- " & quoted form of flagMatch & " 2>/dev/null || true"
+	end try
+end stopStaleAppWindows
 
 on dshPidAmongListeners(listenerPIDs)
 	-- Return the first listener PID whose command line is the dsh server,
@@ -270,40 +401,6 @@ on configFilePath()
 	end try
 	return homeDirectory() & "/" & configRelPath
 end configFilePath
-
-on chromeCacheFile()
-	-- Test hook: redirect the picker cache to a temp file.
-	try
-		set cacheOverride to do shell script "/usr/bin/printenv DEEPSEEK_HARNESS_CACHE || true"
-		if cacheOverride is not "" then return cacheOverride
-	end try
-	return homeDirectory() & "/" & chromeCacheRelPath
-end chromeCacheFile
-
-on readChromeCache()
-	set cacheFile to chromeCacheFile()
-	try
-		do shell script "/bin/test -f " & quoted form of cacheFile
-	on error
-		return ""
-	end try
-	try
-		set cached to do shell script "/usr/bin/head -n 1 " & quoted form of cacheFile & " 2>/dev/null | /usr/bin/tr -d '\\r\\n' || true"
-		if cached is "" then return ""
-		return cached
-	on error
-		return ""
-	end try
-end readChromeCache
-
-on writeChromeCache(appPath)
-	if appPath is "" then return
-	set cacheFile to chromeCacheFile()
-	try
-		set cacheDir to do shell script "/usr/bin/dirname " & quoted form of cacheFile
-		do shell script "/bin/mkdir -p " & quoted form of cacheDir & "; /usr/bin/printf %s " & quoted form of appPath & " > " & quoted form of cacheFile & "; /bin/chmod 600 " & quoted form of cacheFile & " || true"
-	end try
-end writeChromeCache
 
 on expandedPath(thePath)
 	if thePath is "~" then
@@ -387,89 +484,3 @@ on effectiveDshCommand()
 	if customCommand is not "" then return customCommand
 	return do shell script "if [ -x /opt/homebrew/bin/mise ]; then echo '/opt/homebrew/bin/mise exec -- dsh web --no-open'; elif [ -x /usr/local/bin/mise ]; then echo '/usr/local/bin/mise exec -- dsh web --no-open'; elif /usr/bin/command -v mise >/dev/null 2>&1; then echo 'mise exec -- dsh web --no-open'; else echo 'npx -y @deepseek-ai/dsh web --no-open'; fi"
 end effectiveDshCommand
-
-on effectiveChromeApp()
-	set customApp to configValueFor("CHROME_APP")
-	if customApp is not "" then
-		try
-			do shell script "/bin/test -d " & quoted form of customApp
-			return customApp
-		on error
-			display dialog "Configured Chrome app was not found (" & customApp & "). Falling back to search." buttons {"OK"} default button "OK" with icon note
-		end try
-	end if
-	return findChromeApp()
-end effectiveChromeApp
-
-on chromeLoaderPathFor(chromeApp)
-	-- Read the real executable name instead of assuming app_mode_loader,
-	-- which may change across Chrome versions.
-	try
-		set execName to do shell script "/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' " & quoted form of (chromeApp & "/Contents/Info.plist")
-		if execName is "" then error "empty executable name"
-		return chromeApp & "/Contents/MacOS/" & execName
-	on error
-		return chromeApp & "/Contents/MacOS/app_mode_loader"
-	end try
-end chromeLoaderPathFor
-
-on chromePidForLoader(loaderPath)
-	-- Exact executable match: the ps command must equal the loader path or
-	-- start with it followed by a space (args). A plain substring match
-	-- would confuse /Foo.app/... with /Foo2.app/.... Single awk, no grep,
-	-- so no grep -v self-match dance and no SIGPIPE pipefail hazard.
-	try
-		return do shell script "/bin/ps -axww -o pid=,command= | /usr/bin/awk -v target=" & quoted form of loaderPath & " '{ pid = $1; sub(/^ *[^ ]+ +/, \"\"); cmd = $0; if (cmd == target || substr(cmd, 1, length(target) + 1) == target \" \") { print pid; exit } }' || true"
-	on error
-		return ""
-	end try
-end chromePidForLoader
-
-on findChromeApp()
-	-- 1. File cache: survives reinstalls (unlike the legacy main.scpt property).
-	set cachedPath to readChromeCache()
-	if cachedPath is not "" then
-		try
-			do shell script "/bin/test -d " & quoted form of cachedPath
-			set resolvedChromeAppPath to cachedPath
-			return cachedPath
-		end try
-	end if
-
-	-- 2. Legacy in-memory property: migrate pre-file-cache picks forward.
-	if resolvedChromeAppPath is not "" then
-		try
-			do shell script "/bin/test -d " & quoted form of resolvedChromeAppPath
-			writeChromeCache(resolvedChromeAppPath)
-			return resolvedChromeAppPath
-		end try
-	end if
-
-	set homeDir to homeDirectory()
-	set candidates to {homeDir & "/Applications/" & chromeAppName, homeDir & "/Applications/Chrome Apps.localized/" & chromeAppName, "/Applications/" & chromeAppName, "/Applications/Chrome Apps.localized/" & chromeAppName}
-	repeat with candidate in candidates
-		try
-			do shell script "/bin/test -d " & quoted form of candidate
-			set resolvedChromeAppPath to candidate as text
-			writeChromeCache(resolvedChromeAppPath)
-			return resolvedChromeAppPath
-		end try
-	end repeat
-
-	try
-		set chosenApp to choose file of type {"com.apple.application-bundle"} with prompt "Locate your " & chromeAppName & " Chrome app"
-		set resolvedChromeAppPath to POSIX path of chosenApp
-		if resolvedChromeAppPath ends with "/" then
-			set resolvedChromeAppPath to text 1 thru -2 of resolvedChromeAppPath
-		end if
-		writeChromeCache(resolvedChromeAppPath)
-		return resolvedChromeAppPath
-	on error errorMessage number errorNumber
-		if errorNumber is -128 then
-			display dialog "No Chrome app selected. Quitting." buttons {"OK"} default button "OK" with icon note
-		else
-			display dialog "Could not locate the Chrome app: " & errorMessage buttons {"OK"} default button "OK" with icon stop
-		end if
-		return ""
-	end try
-end findChromeApp

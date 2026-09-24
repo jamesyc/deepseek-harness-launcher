@@ -112,11 +112,6 @@ export DEEPSEEK_HARNESS_CONFIG="$TMP/does-not-exist.cfg"
 check "missing-file-port" "3080" "$(ask 'effectiveServerPort()')"
 check "missing-file-workspace" "$HOME/.dsh/workspace" "$(ask 'effectiveWorkspacePath()')"
 
-# Existing CHROME_APP dir is used verbatim (no picker).
-printf '%s\n' "CHROME_APP=$TMP" > "$TMP/chrome.cfg"
-export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome.cfg"
-check "chrome-app" "$TMP" "$(ask 'effectiveChromeApp()')"
-
 # Values are trimmed: 'KEY=  ~/x  ' expands without whitespace.
 printf '%s\n' 'WORKSPACE=  ~/work  ' > "$TMP/trim-ws.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/trim-ws.cfg"
@@ -150,13 +145,12 @@ printf '%s\n' 'export SERVER_PORT=3099' > "$TMP/export.cfg"
 export DEEPSEEK_HARNESS_CONFIG="$TMP/export.cfg"
 check "export-prefix-fallback" "3080" "$(ask 'effectiveServerPort()')"
 
-# Missing CHROME_APP dir: configValueFor still returns the path (no dialog);
-# effectiveChromeApp() would prompt, so tests never call it with a missing dir.
-printf '%s\n' "CHROME_APP=$TMP/does-not-exist.app" > "$TMP/chrome-missing.cfg"
-export DEEPSEEK_HARNESS_CONFIG="$TMP/chrome-missing.cfg"
-check "chrome-missing-value" "$TMP/does-not-exist.app" "$(ask 'configValueFor("CHROME_APP")')"
-if [ -d "$TMP/does-not-exist.app" ]; then
-	echo "error: chrome-missing fixture dir unexpectedly exists" >&2
+# Missing dirs are still returned as paths (no existence check here).
+printf '%s\n' "SOME_DIR=$TMP/does-not-exist" > "$TMP/missing-dir.cfg"
+export DEEPSEEK_HARNESS_CONFIG="$TMP/missing-dir.cfg"
+check "missing-dir-value" "$TMP/does-not-exist" "$(ask 'configValueFor("SOME_DIR")')"
+if [ -d "$TMP/does-not-exist" ]; then
+	echo "error: missing-dir fixture unexpectedly exists" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
 

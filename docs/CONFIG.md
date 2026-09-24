@@ -22,7 +22,6 @@ A commented template lives at `examples/config.example`.
 SERVER_PORT=3080
 WORKSPACE=~/.dsh/workspace
 LOG_FILE=~/Library/Logs/DeepSeek Harness.log
-CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 # DSH_COMMAND=npx -y @deepseek-ai/dsh web --no-open
 ```
 
@@ -30,29 +29,23 @@ CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 
 | Key | Overrides | Default | Notes |
 |---|---|---|---|
-| `SERVER_PORT` | `serverPort` property | `3080` | Must be 1–65535; invalid values fall back silently. Probed on both `127.0.0.1` and `[::1]` |
+| `SERVER_PORT` | `serverPort` property | `3080` | Must be 1–65535; invalid values fall back silently. Used for the adopted-server check and dialogs; the launcher-started server listens on an OS-picked port and the window opens its scraped URL directly |
 | `WORKSPACE` | `~/.dsh/workspace` | Home-resolved default | Created with `mkdir -p` when the launcher starts its server |
 | `LOG_FILE` | `~/Library/Logs/DeepSeek Harness.log` | Home-resolved default | Previous log over 5 MB rotates to `.1`, then truncated each time the launcher starts its own server |
-| `CHROME_APP` | auto-search + file picker | — | If set but missing, a notice shows and search proceeds |
-| `DSH_COMMAND` | auto-detected command | `/opt/homebrew` → `/usr/local` → `PATH` → `npx` | Used verbatim (a leading `~/` is still expanded) |
+| `DSH_COMMAND` | auto-detected command | `/opt/homebrew` → `/usr/local` → `PATH` → `npx` | Used verbatim (a leading `~/` is still expanded), except the launcher appends `--port 0` unless the override already sets `--port` (the window opens the scraped server URL directly) |
 
 ## Precedence
 
-config file → built-in defaults. The file-picker cache
-(`~/Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath`)
-is only consulted when `CHROME_APP` is unset. It survives reinstalls;
-`CHROME_APP` in the config file still wins when set.
+config file → built-in defaults.
 
 For build-time defaults (used when no config file exists), edit the `property`
 lines at the top of `src/deepseek-harness-launcher.applescript` and rebuild:
 
 | Property | Default | Notes |
 |---|---|---|
-| `serverPort` | `3080` | Used for the URL, `lsof` checks, and dialogs |
-| `chromeAppName` | `DeepSeek Harness.app` | Searched in `~/Applications` and `/Applications`, with and without `Chrome Apps.localized` |
-| `resolvedChromeAppPath` | `""` | Legacy in-memory fallback; the file-picker cache file (above) is the persistent store |
+| `serverPort` | `3080` | Used for the adopted-server `lsof` check and dialogs |
 | `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
-| `chromeCacheRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` | Home-relative picker cache; `DEEPSEEK_HARNESS_CACHE` env overrides it (tests) |
+| `chromeProfileRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeProfile` | Home-relative dedicated Chrome profile for the `--app` window (stable, so UI prefs persist) |
 
 ## Testing override
 
@@ -63,9 +56,6 @@ trying settings without touching your live config:
 ```sh
 DEEPSEEK_HARNESS_CONFIG=/tmp/test.cfg open ~/Applications/"DeepSeek Harness Launcher.app"
 ```
-
-`DEEPSEEK_HARNESS_CACHE` similarly redirects the Chrome-app picker cache
-(used by `tests/test_handlers.sh`).
 
 Note: GUI apps launched from Finder don't inherit your shell's environment, so
 this override mainly takes effect when launching from a terminal (or from tests).

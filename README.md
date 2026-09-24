@@ -2,7 +2,7 @@
 
 macOS AppleScript launcher for the DeepSeek harness (`npx @deepseek-ai/dsh web`).
 
-It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens the Chrome-app wrapper, and stops the backend it started when the GUI quits.
+It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens it in a chromeless Chrome window, and stops the backend it started when the GUI quits.
 
 ## Components
 
@@ -17,12 +17,13 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 ## What the launcher does
 
 1. If another copy of the launcher is already running, focuses it and exits.
-2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog.
-3. Otherwise starts the server in `~/.dsh/workspace`, logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
-4. Waits (up to ~150s worst case: 60 tries × 1s curl timeout × 2 families + 0.5s delay) for `http://127.0.0.1:3080/` or `http://[::1]:3080/` to answer.
-5. Locates the `DeepSeek Harness.app` Chrome app, opens it, and tracks its loader PID (exact executable match).
-6. On `idle` (every 2s): quits when the Chrome app exits; notifies if the server dies unexpectedly.
-7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits.
+2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog. An adopted `dsh` server whose bare URL answers 401 (token fence) also aborts — the launcher never learns its token.
+3. Otherwise starts the server in `~/.dsh/workspace` with `--port 0` (unless the command already sets `--port`), logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
+4. Waits for the `dsh web: <url>` startup line in the log, then probes that URL directly (bare for old servers, `?token=…` for new ones — no version check needed).
+5. Opens the URL in a chromeless Chrome `--app` window under a dedicated profile (`~/Library/Application Support/DeepSeek Harness Launcher/ChromeProfile/`, stable so UI prefs persist). The binary is launched directly — never `open -a`, which would merge into the running browser — so the browser process is PID-trackable and exits with its last window.
+6. Tracks the window's browser PID; a crash orphan holding the profile is stopped before launching.
+7. On `idle` (every 2s): quits when the window exits; notifies if the server dies unexpectedly.
+8. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits (the window is left open, as before).
 
 It never kills a server it didn't start (`ownsServer` flag).
 
@@ -35,7 +36,7 @@ No hardcoded usernames. Home-based paths resolve from `(path to home folder)` at
 
 `dsh` resolution order: `/opt/homebrew/bin/mise` (Apple Silicon) → `/usr/local/bin/mise` (Intel) → `mise` on `PATH` → `npx -y @deepseek-ai/dsh` fallback.
 
-Chrome-app search order: `~/Applications/<name>` → `~/Applications/Chrome Apps.localized/<name>` → `/Applications/<name>` → `/Applications/Chrome Apps.localized/<name>`. If none is found, a file picker asks once and the choice is cached in `~/Library/Application Support/DeepSeek Harness Launcher/ChromeAppPath` (survives reinstalls).
+Chrome binary: `/Applications/Google Chrome.app` preferred, `~/Applications/Google Chrome.app` otherwise. No Chrome-app shortcut, picker, or cache — the launcher drives the binary directly with `--app` under its own profile, so per-token URLs just work.
 
 ## Configuration (optional)
 
@@ -47,14 +48,14 @@ reference and `examples/config.example` for a template:
 # ~/.config/deepseek-harness-launcher/config
 SERVER_PORT=3080
 WORKSPACE=~/.dsh/workspace
-CHROME_APP=~/Applications/Chrome Apps.localized/DeepSeek Harness.app
 ```
 
 ## Prerequisites
 
-- macOS with Chrome + a Chrome app for `http://127.0.0.1:3080` named `DeepSeek Harness`
-  (Chrome → More Tools → Create Shortcut → Open as window, or `⋮` → Cast, save and share → Install page as app).
+- macOS with Google Chrome.
 - One of: `mise` with `dsh` installed, or `node`/`npx` for the `@deepseek-ai/dsh` fallback.
+
+No Chrome-app shortcut is needed anymore (an old `DeepSeek Harness.app` can be deleted); the launcher opens a chromeless `--app` window itself.
 
 ## Build
 
@@ -95,7 +96,7 @@ nothing in the old bundle is kept. Backs up the old bundle to
 # or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./scripts/verify.sh
 ```
 
-Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/Chrome-app/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`).
+Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/`--app`-window/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`).
 
 ## Testing
 
@@ -105,8 +106,8 @@ Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the emb
 
 Runs `tests/test_*.sh`: AppleScript compiles, no `/Users/` paths in source or
 compiled output, config/handlers behave against fixtures (via the
-`DEEPSEEK_HARNESS_CONFIG` and `DEEPSEEK_HARNESS_CACHE` overrides), Chrome-PID
-matching fixtures, and a full build-then-verify round trip.
+`DEEPSEEK_HARNESS_CONFIG` override), window-command fixtures, and a full
+build-then-verify round trip.
 `.github/workflows/ci.yml` runs a fast Linux job (`shellcheck` + portable
 tests) and a full `run.sh` job on `macos-latest`
 (the AppleScript toolchain only exists on macOS).
@@ -116,13 +117,13 @@ tests) and a full `run.sh` job on `macos-latest`
 Build-time defaults live in the `property` lines at the top of
 `src/deepseek-harness-launcher.applescript`; runtime overrides live in
 `~/.config/deepseek-harness-launcher/config`. Full reference (keys, format,
-precedence, picker cache): [`docs/CONFIG.md`](docs/CONFIG.md).
+precedence): [`docs/CONFIG.md`](docs/CONFIG.md).
 
 ## Uninstall
 
 ```sh
 rm -rf ~/Applications/"DeepSeek Harness Launcher.app"
-# optional: config, log, workspace, picker cache
+# optional: config, log, workspace, profile
 rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/Library/Logs/DeepSeek\ Harness.log.1 ~/.dsh/workspace
 rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
 ```
@@ -133,10 +134,17 @@ rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
 ## Troubleshooting
 
 - **"Port 3080 is already in use"** — another program owns the port. Stop it
-  or set `SERVER_PORT` in the config (the Chrome app must target the same port).
+  or set `SERVER_PORT` in the config.
 - **"DeepSeek Harness did not start"** — check the tail of the log:
   `tail -n 20 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
-  Previous large logs rotate to `*.log.1`.
+  Previous large logs rotate to `*.log.1`. The server must print a
+  `dsh web: <url>` line — without it the launcher never finds the port.
+- **"The DeepSeek Harness window did not open"** — Google Chrome is missing
+  or its binary moved; the launcher looks in `/Applications` then
+  `~/Applications`.
+- **"The running server requires authentication"** — a token-fenced `dsh`
+  already owns the port. Stop it and relaunch so the launcher starts the
+  server itself, or open the token URL printed by `dsh web` yourself.
 - **No Automation permission prompt is expected** — the launcher avoids
   System Events by design.
 - `DEEPSEEK_HARNESS_CONFIG` only takes effect when launching from a terminal;

@@ -43,8 +43,8 @@ decompiled="$(mktemp)"
 trap 'rm -f "$decompiled"' EXIT
 /usr/bin/osadecompile "$launcher_app" > "$decompiled"
 
-for pattern in 'dsh web --no-open' 'kill -TERM' 'DeepSeek Harness.app'; do
-	if ! grep -q "$pattern" "$decompiled"; then
+for pattern in 'dsh web --no-open' 'kill -TERM' '--app=' '--user-data-dir' 'appWindowCommandFor'; do
+	if ! grep -q -- "$pattern" "$decompiled"; then
 		echo "error: expected string [$pattern] not found in launcher script" >&2
 		exit 1
 	fi
