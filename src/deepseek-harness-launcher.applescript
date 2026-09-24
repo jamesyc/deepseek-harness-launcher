@@ -93,7 +93,9 @@ on run
 			set targetURL to serverURLFromLog(logFile)
 			if targetURL starts with "http" then
 				try
-					do shell script "/usr/bin/curl --fail --silent --max-time 1 " & quoted form of targetURL & " >/dev/null"
+					-- --noproxy: loopback must never go through a proxy
+					-- (a proxy env would break every probe for proxied users).
+					do shell script "/usr/bin/curl --fail --silent --max-time 1 --noproxy '*' " & quoted form of targetURL & " >/dev/null"
 					set serverReady to true
 					exit repeat
 				end try
@@ -268,7 +270,7 @@ on bareStatusCode(checkURL)
 	-- server, 401 is the token fence, 000 is an unreachable race (the caller
 	-- treats it as legacy, preserving the old adopt-blindly behavior).
 	try
-		return do shell script "/usr/bin/curl --silent --output /dev/null --write-out '%{http_code}' --max-time 2 " & quoted form of checkURL & " || true"
+		return do shell script "/usr/bin/curl --silent --output /dev/null --write-out '%{http_code}' --max-time 2 --noproxy '*' " & quoted form of checkURL & " || true"
 	on error
 		return "000"
 	end try

@@ -20,7 +20,7 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog. An adopted `dsh` server whose bare URL answers 401 (token fence) also aborts — the launcher never learns its token.
 3. Otherwise starts the server in `~/.dsh/workspace` with `--port 0` (unless the command already sets `--port`), logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
 4. Waits for the `dsh web: <url>` startup line in the log, then probes that URL directly (bare for old servers, `?token=…` for new ones — no version check needed).
-5. Opens the URL in the bundled chromeless window (`Contents/Resources/DeepSeek Harness.app`: own Dock icon, no browser involved, token passed as argv). The window process exits with its last window, so it is PID-trackable; a crash orphan is stopped before launching.
+5. Opens the URL in the bundled chromeless window (`Contents/Resources/DeepSeek Harness.app`: own Dock icon, no browser involved, token passed as argv). The window process exits with its last window, so it is PID-trackable; a crash orphan is stopped before launching. File > New Window (⌘N) opens another window on the same server; all windows share one backend, and closing the last one quits the launcher cascade.
 6. Tracks the window PID — quits when the window exits, notifies if the server dies unexpectedly (checked every 2s in `idle`).
 7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits (the window is left open, as before).
 

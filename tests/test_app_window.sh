@@ -33,6 +33,16 @@ if ! grep -F -q -- '--port 0' "$ROOT/src/deepseek-harness-launcher.applescript";
 	echo "error: ephemeral-port flag in src drifted; update $0" >&2
 	exit 1
 fi
+# Window parity: the multi-window entry point plus the last-close anchor
+# the launcher's idle cascade depends on.
+if ! grep -F -q 'New Window' "$ROOT/src/window/main.swift"; then
+	echo "error: New Window action missing from window source" >&2
+	exit 1
+fi
+if ! grep -F -q 'TerminateAfterLastWindowClosed' "$ROOT/src/window/main.swift"; then
+	echo "error: last-close anchor missing from window source" >&2
+	exit 1
+fi
 
 # serverURLFromLog(): token, bare, last-wins, empty, missing.
 printf '%s\n' 'starting up' 'dsh web: http://127.0.0.1:54621/?token=AbC_123-xyz' > "$TMP/tok.log"
@@ -53,9 +63,15 @@ check "port-empty" "" "$(ask 'portOfURL("")')"
 
 # bareStatusCode(): 200 live, 000 closed. (401 is the token fence, pinned
 # against live dsh 0.1.5 during development; no dsh binary is needed here.)
+# --noproxy: CI runners may export proxy env that must not apply to loopback.
+# Poll for readiness: a cold python3 on a fresh runner can take seconds.
 P_ORIG="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
 (cd "$TMP" && nohup python3 -m http.server "$P_ORIG" --bind 127.0.0.1 >"$TMP/origin.log" 2>&1 < /dev/null & echo $! > "$TMP/origin.pid")
-sleep 1
+i=0
+while [ "$i" -lt 30 ] && ! curl -s --noproxy '*' -o /dev/null --max-time 1 "http://127.0.0.1:$P_ORIG/" 2>/dev/null; do
+	sleep 0.5
+	i=$((i + 1))
+done
 check "status-live" "200" "$(ask "bareStatusCode(\"http://127.0.0.1:$P_ORIG/\")")"
 check "status-closed" "000" "$(ask 'bareStatusCode("http://127.0.0.1:9/")')"
 
