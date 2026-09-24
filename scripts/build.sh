@@ -36,7 +36,7 @@ case "$canon" in
 		echo "error: refusing to build into $OUTPUT" >&2; exit 1;;
 esac
 
-for tool in /usr/bin/osacompile /usr/libexec/PlistBuddy /usr/bin/codesign; do
+for tool in /usr/bin/osacompile /usr/libexec/PlistBuddy /usr/bin/codesign /usr/bin/swiftc; do
 	if [ ! -x "$tool" ]; then
 		echo "error: required tool missing: $tool" >&2; exit 1
 	fi
@@ -84,10 +84,22 @@ set_or_add string CFBundleIconFile "$BUNDLE_ICON_FILE"
 # the launcher runs without a Dock icon, then re-sign (editing Info.plist
 # invalidates the original signature).
 set_or_add bool LSUIElement true
+
+# Nested chromeless window (own Dock icon, no browser dependency): compile
+# the Swift source straight into a bundle inside Resources, so the launcher
+# ships as one install unit. -swift-version 5 dodges Swift 6 mode strictness
+# this file does not need.
+WINDOW_APP="$OUTPUT/Contents/Resources/DeepSeek Harness.app"
+/bin/mkdir -p "$WINDOW_APP/Contents/MacOS" "$WINDOW_APP/Contents/Resources"
+/usr/bin/swiftc -swift-version 5 -o "$WINDOW_APP/Contents/MacOS/DeepSeek Harness" "$ROOT/src/window/main.swift" -framework Cocoa -framework WebKit
+/bin/cp "$ROOT/src/window/Info.plist" "$WINDOW_APP/Contents/Info.plist"
+/bin/cp "$ROOT/assets/applet.icns" "$WINDOW_APP/Contents/Resources/applet.icns"
+
 /usr/bin/codesign --force --deep --sign - "$OUTPUT"
 
 # Fail the build here rather than at install/verify time.
 /usr/bin/plutil -lint "$OUTPUT/Contents/Info.plist" >/dev/null
+/usr/bin/plutil -lint "$WINDOW_APP/Contents/Info.plist" >/dev/null
 /usr/bin/codesign --verify --deep --strict "$OUTPUT"
 
 echo "built: $OUTPUT"

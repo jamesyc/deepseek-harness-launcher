@@ -4,7 +4,6 @@ property ownsServer : false
 
 property serverPort : 3080
 property configRelPath : ".config/deepseek-harness-launcher/config"
-property chromeProfileRelPath : "Library/Application Support/DeepSeek Harness Launcher/ChromeProfile"
 
 on run
 	set serverPID to ""
@@ -129,22 +128,24 @@ on run
 		if resolvedPID is not "" then set serverPID to resolvedPID
 	end if
 
-	set sourceApp to chromeBinary()
-	if sourceApp is "" then
-		display dialog "Google Chrome was not found. Install it, then relaunch." buttons {"OK"} default button "OK" with icon stop
+	set windowBin to windowAppPath()
+	try
+		do shell script "/bin/test -x " & quoted form of windowBin
+	on error
+		display dialog "The DeepSeek Harness window component is missing. Rebuild via ./scripts/build.sh and reinstall." buttons {"OK"} default button "OK" with icon stop
 		quit
 		return
-	end if
-	-- A crash orphan may still hold the dedicated profile (Chrome refuses a
-	-- second instance on one profile); stop it before launching.
-	stopStaleAppWindows(chromeProfileDir())
+	end try
+	-- A crash orphan may still be around from a killed run; stop it before
+	-- launching (same binary path, so the match is exact).
+	stopStaleWindows(windowBin)
 
-	-- Chromeless --app window in the dedicated profile, opened directly on
-	-- the target URL (bare or token-bearing): single origin throughout, so
-	-- no tab strip. Direct-exec only -- `open -a` would merge into the
-	-- running browser and drop --user-data-dir. $! is the browser process,
-	-- which exits with its last window, so the idle cascade keeps working.
-	set chromePID to do shell script appWindowCommandFor(sourceApp, chromeProfileDir(), targetURL, wsPath, logFile)
+	-- Chromeless window bundled inside Resources, opened directly on the
+	-- target URL (bare or token-bearing): single origin throughout, so no
+	-- tab strip, own Dock icon, no browser involved. $! is the window
+	-- process itself, which exits with its last window, so the idle cascade
+	-- keeps working.
+	set chromePID to do shell script windowCommandFor(windowBin, targetURL, wsPath, logFile)
 	set windowReady to false
 	repeat 10 times
 		try
@@ -273,56 +274,48 @@ on bareStatusCode(checkURL)
 	end try
 end bareStatusCode
 
-on chromeBinary()
-	-- Direct-exec Chrome path (never `open -a`: that merges into the running
-	-- browser and drops --user-data-dir/--app).
-	set candidates to {"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", homeDirectory() & "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
-	repeat with candidate in candidates
-		try
-			do shell script "/bin/test -x " & quoted form of candidate
-			return candidate as text
-		end try
-	end repeat
-	return ""
-end chromeBinary
+on windowAppPath()
+	-- The chromeless window ships nested inside this bundle's Resources, so
+	-- the launcher installs as one unit. Absent only in hand-built Script
+	-- Editor copies, which the caller rejects with a dialog.
+	set myBundle to POSIX path of (path to me)
+	if myBundle ends with "/" then set myBundle to text 1 thru -2 of myBundle
+	return myBundle & "/Contents/Resources/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
+end windowAppPath
 
-on chromeProfileDir()
-	-- Dedicated profile for the --app window: separate process from the
-	-- user's browser (Chrome singletons per profile), so the window's
-	-- lifetime is PID-trackable. Honors $HOME via homeDirectory, so tests
-	-- stay hermetic. Stable across launches, so UI prefs persist.
-	return homeDirectory() & "/" & chromeProfileRelPath
-end chromeProfileDir
-
-on appWindowCommandFor(chromeBin, profileDir, targetURL, wsPath, logFile)
-	-- Assemble the --app-window launch line. Same load-bearing grammar as
+on windowCommandFor(windowBin, targetURL, wsPath, logFile)
+	-- Assemble the window launch line: the URL travels as argv (never
+	-- interpolated into code). Same load-bearing grammar as
 	-- launchCommandFor: `;` + `&` on the simple nohup unit, all fds
 	-- redirected, so `do shell script` returns instantly with $! -- and $!
-	-- is the browser process itself, which exits with its last window.
-	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & quoted form of chromeBin & " --user-data-dir=" & quoted form of profileDir & " --no-first-run --no-default-browser-check --app=" & quoted form of targetURL & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
-end appWindowCommandFor
+	-- is the window process itself, which exits with its last window.
+	return "cd " & quoted form of wsPath & "; /usr/bin/nohup " & quoted form of windowBin & " " & quoted form of targetURL & " >> " & quoted form of logFile & " 2>&1 < /dev/null & echo $!"
+end windowCommandFor
 
-on stopStaleAppWindows(profileDir)
-	-- A crash orphan may still hold the dedicated profile (Chrome refuses a
-	-- second instance on one profile, showing a blocking dialog). TERM, wait,
-	-- then KILL stragglers. pkill/pgrep never match themselves, so no
-	-- self-kill dance is needed.
-	set flagMatch to "--user-data-dir=" & profileDir
+on stopStaleWindows(windowBin)
+	-- A crash orphan (same binary path) is stopped before launching, TERM
+	-- then KILL. The match pattern brackets its first character (classic
+	-- self-exclusion): pkill/pgrep cmdlines carry the bracketed form, which
+	-- the regex never matches, so the invoking shells can neither kill
+	-- themselves nor wedge the wait loop below. Absolute paths only, so the
+	-- bracketed "/" is always a safe literal.
+	if windowBin does not start with "/" then return
+	set matchPattern to "[" & text 1 of windowBin & "]" & text 2 thru -1 of windowBin
 	try
-		do shell script "/usr/bin/pkill -TERM -f -- " & quoted form of flagMatch & " 2>/dev/null || true"
+		do shell script "/usr/bin/pkill -TERM -f -- " & quoted form of matchPattern & " 2>/dev/null || true"
 	end try
 	repeat 10 times
 		try
-			do shell script "/usr/bin/pgrep -f -- " & quoted form of flagMatch & " >/dev/null && exit 1 || exit 0"
+			do shell script "/usr/bin/pgrep -f -- " & quoted form of matchPattern & " >/dev/null && exit 1 || exit 0"
 			exit repeat
 		on error
 			delay 0.5
 		end try
 	end repeat
 	try
-		do shell script "/usr/bin/pkill -KILL -f -- " & quoted form of flagMatch & " 2>/dev/null || true"
+		do shell script "/usr/bin/pkill -KILL -f -- " & quoted form of matchPattern & " 2>/dev/null || true"
 	end try
-end stopStaleAppWindows
+end stopStaleWindows
 
 on dshPidAmongListeners(listenerPIDs)
 	-- Return the first listener PID whose command line is the dsh server,

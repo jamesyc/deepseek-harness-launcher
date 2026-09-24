@@ -2,7 +2,7 @@
 
 macOS AppleScript launcher for the DeepSeek harness (`npx @deepseek-ai/dsh web`).
 
-It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens it in a chromeless Chrome window, and stops the backend it started when the GUI quits.
+It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens it in its own chromeless window, and stops the backend it started when the GUI quits.
 
 ## Components
 
@@ -20,10 +20,9 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog. An adopted `dsh` server whose bare URL answers 401 (token fence) also aborts — the launcher never learns its token.
 3. Otherwise starts the server in `~/.dsh/workspace` with `--port 0` (unless the command already sets `--port`), logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
 4. Waits for the `dsh web: <url>` startup line in the log, then probes that URL directly (bare for old servers, `?token=…` for new ones — no version check needed).
-5. Opens the URL in a chromeless Chrome `--app` window under a dedicated profile (`~/Library/Application Support/DeepSeek Harness Launcher/ChromeProfile/`, stable so UI prefs persist). The binary is launched directly — never `open -a`, which would merge into the running browser — so the browser process is PID-trackable and exits with its last window.
-6. Tracks the window's browser PID; a crash orphan holding the profile is stopped before launching.
-7. On `idle` (every 2s): quits when the window exits; notifies if the server dies unexpectedly.
-8. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits (the window is left open, as before).
+5. Opens the URL in the bundled chromeless window (`Contents/Resources/DeepSeek Harness.app`: own Dock icon, no browser involved, token passed as argv). The window process exits with its last window, so it is PID-trackable; a crash orphan is stopped before launching.
+6. Tracks the window PID — quits when the window exits, notifies if the server dies unexpectedly (checked every 2s in `idle`).
+7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits (the window is left open, as before).
 
 It never kills a server it didn't start (`ownsServer` flag).
 
@@ -36,7 +35,7 @@ No hardcoded usernames. Home-based paths resolve from `(path to home folder)` at
 
 `dsh` resolution order: `/opt/homebrew/bin/mise` (Apple Silicon) → `/usr/local/bin/mise` (Intel) → `mise` on `PATH` → `npx -y @deepseek-ai/dsh` fallback.
 
-Chrome binary: `/Applications/Google Chrome.app` preferred, `~/Applications/Google Chrome.app` otherwise. No Chrome-app shortcut, picker, or cache — the launcher drives the binary directly with `--app` under its own profile, so per-token URLs just work.
+No browser needed: the window is a tiny WebKit wrapper compiled from `src/window/` and nested inside the bundle, so per-token URLs just work with no Chrome, Safari, shortcuts, pickers, or caches.
 
 ## Configuration (optional)
 
@@ -52,10 +51,10 @@ WORKSPACE=~/.dsh/workspace
 
 ## Prerequisites
 
-- macOS with Google Chrome.
+- macOS (Apple Silicon or Intel — the window compiles natively via `swiftc`).
 - One of: `mise` with `dsh` installed, or `node`/`npx` for the `@deepseek-ai/dsh` fallback.
 
-No Chrome-app shortcut is needed anymore (an old `DeepSeek Harness.app` can be deleted); the launcher opens a chromeless `--app` window itself.
+No browser and no shortcut setup: the launcher ships its own window.
 
 ## Build
 
@@ -65,9 +64,9 @@ No Chrome-app shortcut is needed anymore (an old `DeepSeek Harness.app` can be d
 ./scripts/build.sh --output /tmp/"DeepSeek Harness Launcher.app"
 ```
 
-This compiles `src/`, embeds `assets/applet.icns`, stamps canonical identity
+This compiles `src/` (AppleScript via `osacompile`, window via `swiftc`), embeds `assets/applet.icns` (both bundles share the whale), stamps canonical identity
 from `assets/bundle-identity` (display name, icon file, `LSUIElement=true`
-for no Dock icon; no `CFBundleIdentifier` by design), and re-signs.
+for no Dock icon on the launcher; the nested window keeps its Dock icon), and re-signs.
 Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
 
 Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
@@ -96,7 +95,7 @@ nothing in the old bundle is kept. Backs up the old bundle to
 # or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./scripts/verify.sh
 ```
 
-Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/`--app`-window/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`).
+Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/window/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`). Also checks the nested window bundle (executable, plist, pinned display name, matching icon) under `Contents/Resources/DeepSeek Harness.app`.
 
 ## Testing
 
@@ -123,9 +122,9 @@ precedence): [`docs/CONFIG.md`](docs/CONFIG.md).
 
 ```sh
 rm -rf ~/Applications/"DeepSeek Harness Launcher.app"
-# optional: config, log, workspace, profile
+# optional: config, log, workspace, window web data
 rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/Library/Logs/DeepSeek\ Harness.log.1 ~/.dsh/workspace
-rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
+rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher ~/Library/WebKit/local.deepseek-harness.window
 ```
 
 `install.sh` keeps the 5 newest timestamped backups in `$TMPDIR`
@@ -139,9 +138,10 @@ rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher
   `tail -n 20 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
   Previous large logs rotate to `*.log.1`. The server must print a
   `dsh web: <url>` line — without it the launcher never finds the port.
-- **"The DeepSeek Harness window did not open"** — Google Chrome is missing
-  or its binary moved; the launcher looks in `/Applications` then
-  `~/Applications`.
+- **"The DeepSeek Harness window did not open"** — the nested window bundle
+  is damaged; rebuild and reinstall.
+- **"The window component is missing"** — same, but detected before launch
+  (hand-built Script Editor copies have no nested bundle).
 - **"The running server requires authentication"** — a token-fenced `dsh`
   already owns the port. Stop it and relaunch so the launcher starts the
   server itself, or open the token URL printed by `dsh web` yourself.

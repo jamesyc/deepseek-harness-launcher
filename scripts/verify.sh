@@ -43,7 +43,7 @@ decompiled="$(mktemp)"
 trap 'rm -f "$decompiled"' EXIT
 /usr/bin/osadecompile "$launcher_app" > "$decompiled"
 
-for pattern in 'dsh web --no-open' 'kill -TERM' '--app=' '--user-data-dir' 'appWindowCommandFor'; do
+for pattern in 'dsh web --no-open' 'kill -TERM' 'DeepSeek Harness.app' '--port 0' 'windowCommandFor'; do
 	if ! grep -q -- "$pattern" "$decompiled"; then
 		echo "error: expected string [$pattern] not found in launcher script" >&2
 		exit 1
@@ -100,6 +100,24 @@ fi
 # CFBundleIconName must be absent (CFBundleIconFile rules).
 if /usr/bin/plutil -extract CFBundleIconName raw "$launcher_app/Contents/Info.plist" >/dev/null 2>&1; then
 	echo 'error: CFBundleIconName must be absent (CFBundleIconFile rules)' >&2
+	exit 1
+fi
+
+# Nested chromeless window: executable present, plist valid, display name
+# pinned, icon matching the whale. The deep codesign check below covers it.
+window_app="$launcher_app/Contents/Resources/DeepSeek Harness.app"
+if [ ! -x "$window_app/Contents/MacOS/DeepSeek Harness" ]; then
+	echo 'error: nested window binary missing or not executable' >&2
+	exit 1
+fi
+/usr/bin/plutil -lint "$window_app/Contents/Info.plist" >/dev/null
+window_name="$(/usr/bin/plutil -extract CFBundleDisplayName raw "$window_app/Contents/Info.plist" 2>/dev/null || true)"
+if [ "$window_name" != "DeepSeek Harness" ]; then
+	echo "error: nested window display name [$window_name] != [DeepSeek Harness]" >&2
+	exit 1
+fi
+if ! cmp -s "$reference_icon" "$window_app/Contents/Resources/applet.icns"; then
+	echo 'error: nested window icon does not match assets/applet.icns (rebuild via ./scripts/build.sh)' >&2
 	exit 1
 fi
 

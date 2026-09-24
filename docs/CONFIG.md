@@ -45,7 +45,6 @@ lines at the top of `src/deepseek-harness-launcher.applescript` and rebuild:
 |---|---|---|
 | `serverPort` | `3080` | Used for the adopted-server `lsof` check and dialogs |
 | `configRelPath` | `.config/deepseek-harness-launcher/config` | Home-relative config path; `DEEPSEEK_HARNESS_CONFIG` env overrides it |
-| `chromeProfileRelPath` | `Library/Application Support/DeepSeek Harness Launcher/ChromeProfile` | Home-relative dedicated Chrome profile for the `--app` window (stable, so UI prefs persist) |
 
 ## Testing override
 
