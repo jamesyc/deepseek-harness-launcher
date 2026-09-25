@@ -26,4 +26,4 @@
 
 ## Known release limit
 
-Pull-request artifacts remain ad hoc signed. The tag release job now imports a Developer ID identity, creates a temporary notary profile, signs with hardened runtime and timestamp, notarizes, staples, verifies Gatekeeper, and publishes the final archive. Its first live run remains pending until the `release` environment secrets in `docs/RELEASING.md` are configured.
+Pull-request artifacts remain ad hoc signed. The tag release job imports a Developer ID identity, creates a temporary notary profile, signs with hardened runtime and timestamp, notarizes, staples, verifies Gatekeeper, and publishes the final archive. The `release` environment secrets are configured; its first live notarized tag run remains pending.
