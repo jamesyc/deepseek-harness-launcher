@@ -4,6 +4,7 @@ import http.server
 import os
 import signal
 import socket
+import socketserver
 import sys
 
 mode = os.environ.get("FAKE_DSH_MODE", "token")
@@ -27,17 +28,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class FastHTTPServer(http.server.HTTPServer):
+    def server_bind(self):
+        # HTTPServer normally calls getfqdn(host), which can block for tens of
+        # seconds on CI and has no purpose for this loopback fixture.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
 host = os.environ.get("FAKE_DSH_HOST", "127.0.0.1")
 if host == "::1":
-    class IPv6Server(http.server.HTTPServer):
+    class IPv6Server(FastHTTPServer):
         address_family = socket.AF_INET6
     server = IPv6Server((host, 0), Handler)
 else:
-    server = http.server.HTTPServer((host, 0), Handler)
-port_file = os.environ.get("FAKE_DSH_PORT_FILE")
-if port_file:
-    with open(port_file, "w", encoding="utf-8") as output:
-        output.write(str(server.server_address[1]))
+    server = FastHTTPServer((host, 0), Handler)
 url_host = "[::1]" if host == "::1" else host
 url = f"http://{url_host}:{server.server_address[1]}/"
 if mode == "token":
