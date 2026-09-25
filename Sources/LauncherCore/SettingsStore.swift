@@ -17,11 +17,13 @@ public struct LauncherSettings: Equatable, Sendable {
 
 public enum SettingsError: LocalizedError {
     case invalidServerURL
+    case invalidWorkspace
     case keychain(OSStatus)
 
     public var errorDescription: String? {
         switch self {
         case .invalidServerURL: return "The existing server URL must be an HTTP loopback URL with a port."
+        case .invalidWorkspace: return "Choose a workspace directory."
         case .keychain(let status): return "Could not save the server URL in Keychain (\(status))."
         }
     }
@@ -85,6 +87,10 @@ public final class SettingsStore {
     }
 
     public func save(_ settings: LauncherSettings) throws {
+        let workspace = (settings.workspacePath as NSString).expandingTildeInPath
+        if !workspace.hasPrefix("/") {
+            throw SettingsError.invalidWorkspace
+        }
         let manualURL = settings.existingServerURL?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let manualURL, !manualURL.isEmpty {
             guard let url = URL(string: manualURL), ServerURL.isLoopback(url) else {

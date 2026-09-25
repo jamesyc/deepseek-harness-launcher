@@ -3,6 +3,7 @@
 import http.server
 import os
 import signal
+import socket
 import sys
 
 mode = os.environ.get("FAKE_DSH_MODE", "token")
@@ -26,16 +27,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+host = os.environ.get("FAKE_DSH_HOST", "127.0.0.1")
+if host == "::1":
+    class IPv6Server(http.server.HTTPServer):
+        address_family = socket.AF_INET6
+    server = IPv6Server((host, 0), Handler)
+else:
+    server = http.server.HTTPServer((host, 0), Handler)
 port_file = os.environ.get("FAKE_DSH_PORT_FILE")
 if port_file:
     with open(port_file, "w", encoding="utf-8") as output:
         output.write(str(server.server_address[1]))
-url = f"http://127.0.0.1:{server.server_address[1]}/"
+url_host = "[::1]" if host == "::1" else host
+url = f"http://{url_host}:{server.server_address[1]}/"
 if mode == "token":
     url += "?token=test-secret"
 if mode != "silent":
     print(f"dsh web: {url}", flush=True)
+if mode == "exit-later":
+    signal.signal(signal.SIGALRM, lambda *_: sys.exit(0))
+    signal.alarm(1)
 
 
 def stop(*args):

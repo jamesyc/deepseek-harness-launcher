@@ -1,150 +1,53 @@
-# Deepseek Harness Launcher for macOS
+# DeepSeek Harness Launcher for macOS
 
-macOS AppleScript launcher for the DeepSeek harness (`npx @deepseek-ai/dsh web`).
+A single native Swift app for `dsh web`. It opens the Harness in WebKit, supports multiple windows, and manages the server only when it started that server itself.
 
-It starts the `dsh web` backend when the GUI starts (or attaches to a running one), opens it in its own chromeless window, and stops the backend it started when the GUI quits.
+## Requirements
 
-## Components
+- macOS 13 or newer.
+- An installed `dsh` executable. The app never downloads or installs it. If it cannot find `dsh`, it shows an error and opens Settings so you can select the executable.
 
-- `src/deepseek-harness-launcher.applescript` — launcher source. Stay-open AppleScript applet.
-- `scripts/build.sh` — compiles `src/` into a signed `.app` (adds `LSUIElement`, re-signs).
-- `scripts/install.sh` — installs to `~/Applications` from the built bundle, with backup and rollback.
-- `scripts/verify.sh` — smoke-test for a built `.app` bundle.
-- `examples/config.example` — commented sample config.
-- `tests/` — shell tests + fixtures; `.github/workflows/ci.yml` runs them on macOS.
-- `docs/CONFIG.md` — full configuration reference.
+## Get the app
 
-## What the launcher does
+Download `DeepSeek-Harness-Launcher-macOS.zip` from the latest GitHub release, unzip it, and drag `DeepSeek Harness Launcher.app` to Applications. There is no installer script. The release archive contains one universal app for Apple Silicon and Intel Macs.
 
-1. If another copy of the launcher is already running, focuses it and exits.
-2. Checks port `3080` (see `serverPort`). If something other than the `dsh` server owns it, aborts with a dialog. An adopted `dsh` server whose bare URL answers 401 (token fence) also aborts — the launcher never learns its token.
-3. Otherwise starts the server in `~/.dsh/workspace` with `--port 0` (unless the command already sets `--port`), logging to `~/Library/Logs/DeepSeek Harness.log` (rotates the previous log to `.1` when over 5 MB, then truncates on each start).
-4. Waits for the `dsh web: <url>` startup line in the log, then probes that URL directly (bare for old servers, `?token=…` for new ones — no version check needed).
-5. Opens the URL in the bundled chromeless window (`Contents/Resources/DeepSeek Harness.app`: own Dock icon, no browser involved, token passed as argv). The window process exits with its last window, so it is PID-trackable; a crash orphan is stopped before launching. File > New Window (⌘N) opens another window on the same server; all windows share one backend, and closing the last one quits the launcher cascade.
-6. Tracks the window PID — quits when the window exits, notifies if the server dies unexpectedly (checked every 2s in `idle`).
-7. On `quit`: `TERM`s the server it started (escalates to `KILL`), then quits (the window is left open, as before).
+CI release archives are ad hoc signed and are not notarized. macOS may require you to approve the downloaded app in Privacy & Security before opening it. The local packaging script can use a Developer ID certificate when `CODESIGN_IDENTITY` is set.
 
-It never kills a server it didn't start (`ownsServer` flag).
+## What happens at launch
 
-## Portability
+1. The app looks for `dsh` on common executable paths or through `mise which dsh`. A path selected in Settings takes precedence. If no executable exists, it displays an error.
+2. It checks for a running `dsh web` listener. If one responds, the app attaches to it and **does not stop it** when the app quits. A token-protected server can be attached when its startup URL is available from its open log, or from a URL saved in Settings. If a terminal-started server hides its token URL, paste the URL printed by `dsh web` into Settings.
+3. If no `dsh web` server is running, the app launches the installed executable with `web --no-open --port 0`. It reads the startup URL, waits for HTTP readiness, and opens it in WebKit. When the last Harness window closes or you choose Quit, it stops only this child process.
 
-No hardcoded usernames. Home-based paths resolve from `$HOME` at runtime, with `(path to home folder)` as a fallback:
-
-- workspace: `~/.dsh/workspace`
-- log: `~/Library/Logs/DeepSeek Harness.log`
-
-`dsh` resolution order: `/opt/homebrew/bin/mise` (Apple Silicon) → `/usr/local/bin/mise` (Intel) → `mise` on `PATH` → `npx -y @deepseek-ai/dsh` fallback.
-
-No browser needed: the window is a tiny WebKit wrapper compiled from `src/window/` and nested inside the bundle, so per-token URLs just work with no Chrome, Safari, shortcuts, pickers, or caches.
-
-## Configuration (optional)
-
-All settings have working defaults. To override, create
-`~/.config/deepseek-harness-launcher/config` — see `docs/CONFIG.md` for the full
-reference and `examples/config.example` for a template:
-
-```sh
-# ~/.config/deepseek-harness-launcher/config
-SERVER_PORT=3080
-WORKSPACE=~/.dsh/workspace
-```
-
-## Prerequisites
-
-- macOS (Apple Silicon or Intel — the window compiles natively via `swiftc`).
-- One of: `mise` with `dsh` installed, or `node`/`npx` for the `@deepseek-ai/dsh` fallback.
-
-No browser and no shortcut setup: the launcher ships its own window.
-
-## Build
-
-```sh
-./scripts/build.sh
-# custom output:
-./scripts/build.sh --output /tmp/"DeepSeek Harness Launcher.app"
-```
-
-This compiles `src/` (AppleScript via `osacompile`, window via `swiftc`), embeds `assets/applet.icns` (both bundles share the whale), stamps canonical identity
-from `assets/bundle-identity` (display name, icon file, `LSUIElement=true`
-for no Dock icon on the launcher; the nested window keeps its Dock icon), and re-signs.
-Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
-
-## Install
-
-```sh
-./scripts/install.sh
-# ./scripts/install.sh --from /tmp/My.app --to ~/Applications/"DeepSeek Harness Launcher.app"
-```
-
-Stages and verifies a full copy of the build before replacing any existing
-install. Identity and icon ship from source (`assets/bundle-identity`, `assets/applet.icns`), so
-nothing in the old bundle is kept. The previous app is backed up to
-`$TMPDIR`; a failed replacement restores it.
-
-## Verify
-
-```sh
-./scripts/verify.sh
-# custom location:
-./scripts/verify.sh /path/to/"DeepSeek Harness Launcher.app"
-# or: DEEPSEEK_HARNESS_LAUNCHER_APP=/path/to/app ./scripts/verify.sh
-```
-
-Checks the bundle exists, `Info.plist` is valid with `LSUIElement=true`, the embedded script contains the server/window/`kill -TERM` strings, contains no hardcoded `/Users/<name>` path, `applet.icns` matches `assets/applet.icns`, and identity matches `assets/bundle-identity` (display name pinned, no `CFBundleIdentifier`/`CFBundleIconName`). Also checks the nested window bundle (executable, plist, pinned display name, matching icon) under `Contents/Resources/DeepSeek Harness.app`.
-
-## Testing
-
-```sh
-./tests/run.sh
-```
-
-Runs `tests/test_*.sh`: AppleScript compiles, no `/Users/` paths in source or
-compiled output, config/handlers behave against fixtures (via the
-`DEEPSEEK_HARNESS_CONFIG` override), window-command fixtures, and a full
-build-then-verify round trip.
-`.github/workflows/ci.yml` runs a fast Linux job (`shellcheck` + portable
-tests) and a full `run.sh` job on `macos-latest`
-(the AppleScript toolchain only exists on macOS).
+The app uses the existing WebKit bundle identifier (`local.deepseek-harness.window`) to keep the same website data store. File > New Window (⌘N) opens another view of the same server. The server stays alive until the last Harness window closes. External links open in the default browser; downloads go to Downloads.
 
 ## Settings
 
-Build-time defaults live in the `property` lines at the top of
-`src/deepseek-harness-launcher.applescript`; runtime overrides live in
-`~/.config/deepseek-harness-launcher/config`. Full reference (keys, format,
-precedence): [`docs/CONFIG.md`](docs/CONFIG.md).
+Open **DeepSeek Harness → Settings…** (⌘,) to set:
 
-## Uninstall
+| Setting | Purpose |
+| --- | --- |
+| dsh executable | Optional path to an already installed `dsh`; leave empty to find it automatically. |
+| Workspace | Directory used when this app starts a new server; defaults to `~/.dsh/workspace`. |
+| Existing server URL | Optional loopback URL, including the token when required, for an already running server. Stored in macOS Keychain. |
+
+Settings are managed in the app. The old `~/.config/deepseek-harness-launcher/config` file and `DSH_COMMAND`, `SERVER_PORT`, `WORKSPACE`, and `LOG_FILE` shell settings are no longer read. If you used them, open the Settings window and select your executable and workspace. The app no longer keeps a token-bearing server log.
+
+## Build and test
+
+Xcode's Swift toolchain is required to build. No package dependencies are downloaded.
 
 ```sh
-rm -rf ~/Applications/"DeepSeek Harness Launcher.app"
-# optional: config, log, workspace, window web data
-rm -rf ~/.config/deepseek-harness-launcher ~/Library/Logs/DeepSeek\ Harness.log ~/Library/Logs/DeepSeek\ Harness.log.1 ~/.dsh/workspace
-rm -rf ~/Library/Application\ Support/DeepSeek\ Harness\ Launcher ~/Library/WebKit/local.deepseek-harness.window
+swift test
+./tests/test_package.sh
 ```
 
-`install.sh` keeps the 5 newest timestamped backups in `$TMPDIR`
-(`DeepSeek-Harness-Launcher-backup-*.app`); older ones are pruned automatically.
+`scripts/package.sh [version]` builds both macOS architectures, combines them into one `.app`, signs it, verifies its bundle, and creates the zip and SHA-256 file in `dist/`. Set `CODESIGN_IDENTITY` to a Developer ID identity to sign with that certificate; the default is ad hoc signing.
+
+GitHub Actions runs Swift tests and the package test for pull requests and `main`. Pushing a `v*` tag builds a versioned archive and publishes it as a GitHub release. The release job requires `contents: write` only for that tag job.
 
 ## Troubleshooting
 
-- **"Port 3080 is already in use"** — another program owns the port. Stop it
-  or set `SERVER_PORT` in the config.
-- **"DeepSeek Harness did not start"** — check the tail of the log:
-  `tail -n 20 ~/Library/Logs/DeepSeek\ Harness.log` (or your `LOG_FILE`).
-  Previous large logs rotate to `*.log.1`. The server must print a
-  `dsh web: <url>` line — without it the launcher never finds the port.
-- **"The DeepSeek Harness window did not open"** — the nested window bundle
-  is damaged; rebuild and reinstall.
-- **"The window component is missing"** — same, but detected before launch
-  (hand-built Script Editor copies have no nested bundle).
-- **"The running server requires authentication"** — a token-fenced `dsh`
-  already owns the port. Stop it and relaunch so the launcher starts the
-  server itself, or open the token URL printed by `dsh web` yourself.
-- **No Automation permission prompt is expected** — the launcher avoids
-  System Events by design.
-- `DEEPSEEK_HARNESS_CONFIG` only takes effect when launching from a terminal;
-  Finder launches don't inherit shell environment.
-
-## Note
-
-The compiled `DeepSeek Harness Launcher.app` itself is not checked in — build it locally from source.
+- **dsh not found:** Install `dsh`, then reopen the app or choose its executable in Settings.
+- **Running server needs its token:** Paste the full local URL printed by that server into Settings. The app will verify it before attaching.
+- **Server did not start:** Check that `dsh web --no-open --port 0` works in your terminal and that your workspace directory is writable. Startup errors appear in the app without exposing token values.

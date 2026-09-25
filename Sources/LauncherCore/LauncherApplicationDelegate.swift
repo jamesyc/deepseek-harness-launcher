@@ -8,6 +8,7 @@ public final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate 
     private var server: ServerManager?
     private var settingsWindow: SettingsWindowController?
     private var loadingWindow: NSWindow?
+    private var healthTimer: Timer?
     private var connecting = false
 
     public override init() { super.init() }
@@ -21,6 +22,7 @@ public final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        healthTimer?.invalidate()
         guard let server else { return .terminateNow }
         serviceQueue.async {
             server.stop()
@@ -41,11 +43,24 @@ public final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate 
             DispatchQueue.main.async { [weak self] in
                 guard let self else { worker.stop(); return }
                 self.connecting = false
-                self.loadingWindow?.close()
+                self.loadingWindow?.orderOut(nil)
                 self.loadingWindow = nil
                 switch result {
                 case .success(let connection):
                     self.windows.open(url: connection.url)
+                    if connection.isOwned {
+                        self.healthTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                            Task { @MainActor [weak self] in
+                                guard let self, !worker.isOwnedProcessRunning else { return }
+                                self.healthTimer?.invalidate()
+                                let alert = NSAlert()
+                                alert.messageText = "The dsh server stopped"
+                                alert.informativeText = "The server started by this app exited unexpectedly."
+                                alert.runModal()
+                                NSApp.terminate(nil)
+                            }
+                        }
+                    }
                     NSApp.activate(ignoringOtherApps: true)
                 case .failure(let error):
                     self.showConnectionError(error)
@@ -58,6 +73,7 @@ public final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 350, height: 110),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.title = "DeepSeek Harness"
+        window.isReleasedWhenClosed = false
         let spinner = NSProgressIndicator(frame: NSRect(x: 22, y: 39, width: 26, height: 26))
         spinner.style = .spinning
         spinner.startAnimation(nil)

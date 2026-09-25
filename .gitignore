@@ -6,13 +6,6 @@
 .Spotlight-V100
 .Trashes
 
-# AppleScript / build output
-*.scpt
-*.scptd/
-*.app/
-build/**/applet.icns
-*.app/**/applet.icns
-
 # Build output
 build/
 .build/
@@ -20,7 +13,6 @@ dist/
 
 # Logs
 *.log
-DeepSeek\ Harness.log
 
 # Editors
 .vscode/
