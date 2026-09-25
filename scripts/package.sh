@@ -21,14 +21,14 @@ if [ -e "$CHECKSUM" ]; then rm "$CHECKSUM"; fi
 if [ -e "$APP" ]; then rm -R "$APP"; fi
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+binary_paths=()
 for arch in arm64 x86_64; do
-    swift build --package-path "$ROOT" -c release --triple "$arch-apple-macosx13.0" \
-        --scratch-path "$ROOT/.build/$arch" --product DeepSeekHarnessLauncher
+    build_args=(--package-path "$ROOT" -c release --triple "$arch-apple-macosx13.0" --scratch-path "$ROOT/.build/$arch")
+    swift build "${build_args[@]}" --product DeepSeekHarnessLauncher
+    binary_dir="$(swift build "${build_args[@]}" --show-bin-path)"
+    binary_paths+=("$binary_dir/DeepSeekHarnessLauncher")
 done
-/usr/bin/lipo -create \
-    "$ROOT/.build/arm64/out/Products/Release/DeepSeekHarnessLauncher" \
-    "$ROOT/.build/x86_64/out/Products/Release/DeepSeekHarnessLauncher" \
-    -output "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
+/usr/bin/lipo -create "${binary_paths[@]}" -output "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
 
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/assets/applet.icns" "$APP/Contents/Resources/applet.icns"
