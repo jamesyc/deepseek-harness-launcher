@@ -1,3 +1,12 @@
-import Foundation
+import AppKit
+import LauncherCore
 
-// The AppKit entry point is added after the core behavior is covered by tests.
+@main
+struct LauncherMain {
+    @MainActor static func main() {
+        let app = NSApplication.shared
+        let delegate = LauncherApplicationDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+}
