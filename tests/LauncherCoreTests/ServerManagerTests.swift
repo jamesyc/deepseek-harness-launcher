@@ -53,6 +53,42 @@ final class ServerManagerTests: XCTestCase {
         XCTAssertTrue(manager.isOwnedProcessRunning)
     }
 
+    func testMiseLaunchStopsOnlyItsOwnedServer() throws {
+        let workspace = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let bin = workspace.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let mise = bin.appendingPathComponent("mise")
+        let invoked = workspace.appendingPathComponent("mise-invoked")
+        let stopped = workspace.appendingPathComponent("server-stopped")
+        let script = """
+        #!/bin/sh
+        [ -f ./cwd-marker ] || exit 3
+        [ "$MISE_AUTO_INSTALL" = false ] && [ "$MISE_EXEC_AUTO_INSTALL" = false ] || exit 4
+        if [ "$1" = which ]; then echo '\(fixture.path)'; exit 0; fi
+        if [ "$1" = exec ] && [ "$2" = -- ]; then
+            echo yes > '\(invoked.path)'
+            shift 2
+            exec "$@"
+        fi
+        exit 5
+        """
+        try script.write(to: mise, atomically: true, encoding: .utf8)
+        try "".write(to: workspace.appendingPathComponent("cwd-marker"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: mise.path)
+        let manager = ServerManager(environment: ["FAKE_DSH_MODE": "bare", "FAKE_DSH_MARKER": stopped.path],
+                                    discover: { _ in nil },
+                                    resolveLaunch: { path, directory in
+                                        try DshLocator.resolve(configuredPath: path, searchDirectories: [bin.path],
+                                                               workingDirectory: directory)
+                                    })
+        let connection = try manager.connect(settings: .init(workspacePath: workspace.path), timeout: 5)
+        XCTAssertTrue(connection.isOwned)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: invoked.path))
+        manager.stop()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stopped.path))
+    }
+
     func testMissingDshFailsBeforeDiscoveryOrLaunch() {
         let manager = ServerManager(discover: { _ in
             XCTFail("Discovery should not run without an installed dsh")
@@ -82,6 +118,15 @@ final class ServerManagerTests: XCTestCase {
         XCTAssertFalse(connection.isOwned)
         manager.stop()
         XCTAssertTrue(external.isRunning)
+    }
+
+    func testAttachedServerDoesNotRequireWritableWorkspace() throws {
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:3080/"))
+        let manager = ServerManager(discover: { _ in ServerConnection(url: url, isOwned: false) })
+        let settings = LauncherSettings(dshPath: fixture.path, workspacePath: "/dev/null/unused")
+        let connection = try manager.connect(settings: settings)
+        XCTAssertFalse(connection.isOwned)
+        XCTAssertEqual(connection.url, url)
     }
 
     func testTimeoutStopsServerWithoutStartupLine() {

@@ -37,14 +37,19 @@ private final class StartupOutput {
 public final class ServerManager: @unchecked Sendable {
     private let environment: [String: String]
     private let discover: (URL?) throws -> ServerConnection?
+    private let resolveLaunch: (String?, URL) throws -> DshLaunch
     private let processLock = NSLock()
     private var process: Process?
     private var output: Pipe?
 
     public init(environment: [String: String] = [:],
-                discover: @escaping (URL?) throws -> ServerConnection? = { try ServerDiscovery.find(preferredURL: $0) }) {
+                discover: @escaping (URL?) throws -> ServerConnection? = { try ServerDiscovery.find(preferredURL: $0) },
+                resolveLaunch: @escaping (String?, URL) throws -> DshLaunch = {
+                    try DshLocator.resolve(configuredPath: $0, workingDirectory: $1)
+                }) {
         self.environment = environment
         self.discover = discover
+        self.resolveLaunch = resolveLaunch
     }
 
     public var isOwnedProcessRunning: Bool {
@@ -54,21 +59,28 @@ public final class ServerManager: @unchecked Sendable {
 
     public func connect(settings: LauncherSettings, discoverExisting: Bool = true,
                         timeout: TimeInterval = 30) throws -> ServerConnection {
-        let executable = try DshLocator.resolve(configuredPath: settings.dshPath)
+        let workspace = (settings.workspacePath as NSString).expandingTildeInPath
+        let workspaceURL = URL(fileURLWithPath: workspace)
+        var isDirectory: ObjCBool = false
+        let lookupDirectory = FileManager.default.fileExists(atPath: workspace, isDirectory: &isDirectory)
+            && isDirectory.boolValue ? workspaceURL : FileManager.default.homeDirectoryForCurrentUser
+        let initialLaunch = try resolveLaunch(settings.dshPath, lookupDirectory)
         if discoverExisting,
            let existing = try discover(settings.existingServerURL.flatMap(URL.init(string:))) {
             return existing
         }
 
-        let workspace = (settings.workspacePath as NSString).expandingTildeInPath
         try FileManager.default.createDirectory(atPath: workspace, withIntermediateDirectories: true)
+        let launch = lookupDirectory == workspaceURL ? initialLaunch : try resolveLaunch(settings.dshPath, workspaceURL)
         let child = Process()
         let pipe = Pipe()
         let startup = StartupOutput()
-        child.executableURL = executable
-        child.arguments = ["web", "--no-open", "--port", "0"]
-        child.currentDirectoryURL = URL(fileURLWithPath: workspace)
-        child.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+        child.executableURL = launch.executableURL
+        child.arguments = launch.argumentsPrefix + ["web", "--no-open", "--port", "0"]
+        child.currentDirectoryURL = workspaceURL
+        child.environment = ProcessInfo.processInfo.environment
+            .merging(environment) { _, new in new }
+            .merging(launch.environment) { _, new in new }
         child.standardOutput = pipe
         child.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { handle in
