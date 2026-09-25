@@ -10,3 +10,4 @@
 - [x] Verify an actual packaged app attaches to an existing token server and leaves it alive after last-window close.
 - [x] Verify owned start and stop with a real fake `dsh` child and loopback HTTP integration tests.
 - [x] Run the full Swift suite, shell lint, and package gate after final cleanup.
+- [ ] Configure the `release` GitHub environment secrets and verify a tagged CI notarization run.
