@@ -9,9 +9,9 @@ A single native Swift app for `dsh web`. It opens the Harness in WebKit, support
 
 ## Get the app
 
-Download `DeepSeek-Harness-Launcher-macOS.zip` from the latest GitHub release, unzip it, and drag `DeepSeek Harness Launcher.app` to Applications. There is no installer script. The release archive contains one universal app for Apple Silicon and Intel Macs.
+Download the [v1.0.0 macOS archive](https://github.com/jamesyc/deepseek-harness-launcher/releases/download/v1.0.0/DeepSeek-Harness-Launcher-macOS.zip) (or check the [latest release](https://github.com/jamesyc/deepseek-harness-launcher/releases/latest)), unzip it, and drag `DeepSeek Harness Launcher.app` to Applications. There is no installer script. The archive contains one universal app for Apple Silicon and Intel Macs; a [SHA-256 checksum](https://github.com/jamesyc/deepseek-harness-launcher/releases/download/v1.0.0/DeepSeek-Harness-Launcher-macOS.zip.sha256) is published alongside it.
 
-Version-tag releases are Developer ID signed and notarized when the `release` GitHub environment has its signing and notary secrets configured. Pull-request artifacts use ad hoc signing for tests. See [release setup](docs/RELEASING.md).
+The v1.0.0 app is Developer ID signed, Apple notarized, and stapled. GitHub Actions performs those steps for version-tag releases; pull-request artifacts use ad hoc signing for tests. See [release setup](docs/RELEASING.md).
 
 ## What happens at launch
 
@@ -42,9 +42,9 @@ swift test
 ./tests/test_package.sh
 ```
 
-`scripts/package.sh [version]` builds both macOS architectures, combines them into one `.app`, signs it, verifies its bundle, and creates the zip and SHA-256 file in `dist/`. Set `CODESIGN_IDENTITY` to a Developer ID identity for hardened-runtime signing. Add `NOTARY_PROFILE=tcapsulesmb-notary` to notarize locally with your existing Keychain profile; the script staples the ticket before making the final zip.
+`scripts/package.sh [version]` builds both macOS architectures, combines them into one `.app`, signs it, verifies its bundle, and creates the zip and SHA-256 file in `dist/`. Set `CODESIGN_IDENTITY` to a Developer ID identity for hardened-runtime signing. To notarize a local build, also set `NOTARY_PROFILE` to a valid profile in your own Keychain. Local notarization profiles are not needed for CI releases.
 
-GitHub Actions runs Swift tests and the package test for pull requests and `main`. Pushing a `v*` tag builds, signs, notarizes, and publishes a versioned archive. The release job requires `contents: write` only for that tag job.
+GitHub Actions runs Swift tests and the package test for pull requests and `main`. Pushing a `v*` tag builds, signs, notarizes, and publishes a versioned archive. The release job creates a temporary Keychain from GitHub environment secrets and removes it afterward; it does not use a profile stored on your Mac. It requires `contents: write` only for that tag job.
 
 ## Troubleshooting
 
