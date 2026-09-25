@@ -12,7 +12,7 @@ final class WindowBox: NSObject {
     let webView: WKWebView
     var titleObservation: NSKeyValueObservation?
 
-    init(url: URL, uiDelegate: WKUIDelegate, navigationDelegate: WKNavigationDelegate & WKDownloadDelegate, closeDelegate: NSWindowDelegate) {
+    init(uiDelegate: WKUIDelegate, navigationDelegate: WKNavigationDelegate & WKDownloadDelegate, closeDelegate: NSWindowDelegate) {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         webView = WKWebView(frame: .zero, configuration: config)
@@ -21,6 +21,8 @@ final class WindowBox: NSObject {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         super.init()
+        // AppKit's release-on-close default conflicts with ARC ownership in boxes.
+        window.isReleasedWhenClosed = false
         webView.uiDelegate = uiDelegate
         webView.navigationDelegate = navigationDelegate
         window.delegate = closeDelegate
@@ -86,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
 
     func openWindow(_ url: URL) {
-        let box = WindowBox(url: url, uiDelegate: self, navigationDelegate: self, closeDelegate: self)
+        let box = WindowBox(uiDelegate: self, navigationDelegate: self, closeDelegate: self)
         boxes.append(box)
         box.show(url: url)
     }
@@ -99,12 +101,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     // the default browser instead of hijacking a chromeless window. The
     // dsh auth flows hand codes back for pasting.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if navigationAction.targetFrame == nil,
-           let url = navigationAction.request.url,
+        if let url = navigationAction.request.url,
            url.scheme == "http" || url.scheme == "https" {
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
-            return
+            let leavesHarness = url.scheme != baseURL?.scheme || url.host != baseURL?.host || url.port != baseURL?.port
+            if navigationAction.targetFrame == nil || (navigationAction.targetFrame?.isMainFrame == true && leavesHarness) {
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
         }
         decisionHandler(.allow)
     }

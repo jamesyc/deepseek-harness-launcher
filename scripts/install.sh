@@ -1,8 +1,8 @@
 #!/bin/bash
 # Install DeepSeek Harness Launcher.app into ~/Applications.
-# Full-copy install: backs up any existing bundle to $TMPDIR, replaces it
-# with the fresh build, then re-signs and verifies. Bundle identity and the
-# icon ship from source (assets/bundle-identity, assets/applet.icns), so a
+# Full-copy install: stages and verifies a fresh build, backs up any existing
+# bundle to $TMPDIR, then replaces it with rollback on failure. Bundle identity
+# and icon ship from source (assets/bundle-identity, assets/applet.icns), so a
 # full copy is always correct — nothing in the old bundle is worth keeping.
 # Usage: ./scripts/install.sh [--from PATH] [--to PATH]
 set -euo pipefail
@@ -66,28 +66,50 @@ case "$canon_to" in
 		echo "error: refusing to install into $TO" >&2; exit 1;;
 esac
 
+mkdir -p "$(dirname "$TO")"
+stage_dir="$(mktemp -d "$(dirname "$TO")/.deepseek-install.XXXXXXXX")"
+# Preserve the old app in stage_dir if a rollback itself fails.
+trap 'if [ -e "$stage_dir/previous.app" ] || [ -L "$stage_dir/previous.app" ]; then echo "recovery copy kept at: $stage_dir/previous.app" >&2; else rm -rf "$stage_dir"; fi' EXIT
+staged_app="$stage_dir/new.app"
+/usr/bin/ditto "$FROM" "$staged_app"
+/usr/bin/codesign --force --deep --sign - "$staged_app"
+"$ROOT/scripts/verify.sh" "$staged_app"
+
 had_existing=0
-if [ -d "$TO" ]; then
-	BACKUP="${TMPDIR:-/tmp}/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S).app"
-	/usr/bin/ditto "$TO" "$BACKUP"
-	echo "backed up existing app to: $BACKUP"
-	# Keep only the 5 newest backups; best-effort, never fails the install.
-	BACKUP_DIR="${TMPDIR:-/tmp}"
-	# shellcheck disable=SC2012
-	ls -dt "$BACKUP_DIR"/DeepSeek-Harness-Launcher-backup-*.app 2>/dev/null | tail -n +6 | while IFS= read -r old; do
-		rm -rf "$old" || true
-	done || true
+if [ -e "$TO" ] || [ -L "$TO" ]; then
+	if [ ! -d "$TO" ]; then
+		echo "error: install target exists but is not an app directory: $TO" >&2
+		exit 1
+	fi
+	backup_dir="${TMPDIR:-/tmp}"
+	mkdir -p "$backup_dir"
+	backup="$backup_dir/DeepSeek-Harness-Launcher-backup-$(date +%Y%m%d-%H%M%S)-$$.app"
+	/usr/bin/ditto "$TO" "$backup"
+	echo "backed up existing app to: $backup"
+	/bin/mv "$TO" "$stage_dir/previous.app"
 	had_existing=1
-	rm -rf "$TO"
 fi
 
-mkdir -p "$(dirname "$TO")"
-/usr/bin/ditto "$FROM" "$TO"
+if ! /bin/mv "$staged_app" "$TO"; then
+	if [ "$had_existing" -eq 1 ]; then /bin/mv "$stage_dir/previous.app" "$TO"; fi
+	echo "error: could not replace app at $TO" >&2
+	exit 1
+fi
+if ! "$ROOT/scripts/verify.sh" "$TO"; then
+	/bin/mv "$TO" "$stage_dir/failed.app" || true
+	if [ "$had_existing" -eq 1 ]; then /bin/mv "$stage_dir/previous.app" "$TO"; fi
+	echo "error: installed app failed verification" >&2
+	exit 1
+fi
+
 if [ "$had_existing" -eq 1 ]; then
+	rm -rf "$stage_dir/previous.app"
 	echo "updated existing app at: $TO"
+	# Keep only the 5 newest backups after a successful replacement.
+	# shellcheck disable=SC2012
+	ls -dt "$backup_dir"/DeepSeek-Harness-Launcher-backup-*.app 2>/dev/null | tail -n +6 | while IFS= read -r old; do
+		rm -rf "$old" || true
+	done || true
 else
 	echo "fresh install to: $TO"
 fi
-
-/usr/bin/codesign --force --deep --sign - "$TO"
-"$ROOT/scripts/verify.sh" "$TO"

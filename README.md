@@ -8,7 +8,7 @@ It starts the `dsh web` backend when the GUI starts (or attaches to a running on
 
 - `src/deepseek-harness-launcher.applescript` — launcher source. Stay-open AppleScript applet.
 - `scripts/build.sh` — compiles `src/` into a signed `.app` (adds `LSUIElement`, re-signs).
-- `scripts/install.sh` — installs to `~/Applications`, preserving the existing bundle's ID/icon.
+- `scripts/install.sh` — installs to `~/Applications` from the built bundle, with backup and rollback.
 - `scripts/verify.sh` — smoke-test for a built `.app` bundle.
 - `examples/config.example` — commented sample config.
 - `tests/` — shell tests + fixtures; `.github/workflows/ci.yml` runs them on macOS.
@@ -28,7 +28,7 @@ It never kills a server it didn't start (`ownsServer` flag).
 
 ## Portability
 
-No hardcoded usernames. Home-based paths resolve from `(path to home folder)` at runtime:
+No hardcoded usernames. Home-based paths resolve from `$HOME` at runtime, with `(path to home folder)` as a fallback:
 
 - workspace: `~/.dsh/workspace`
 - log: `~/Library/Logs/DeepSeek Harness.log`
@@ -69,11 +69,6 @@ from `assets/bundle-identity` (display name, icon file, `LSUIElement=true`
 for no Dock icon on the launcher; the nested window keeps its Dock icon), and re-signs.
 Output defaults to `build/DeepSeek Harness Launcher.app` (gitignored).
 
-Manual alternative — Script Editor: open `src/deepseek-harness-launcher.applescript`,
-File → Save as Application, check Stay open, name it `DeepSeek Harness Launcher`,
-save to `~/Applications/`. (The manual app shows a Dock icon — `LSUIElement`
-is only added by `build.sh`.)
-
 ## Install
 
 ```sh
@@ -81,10 +76,10 @@ is only added by `build.sh`.)
 # ./scripts/install.sh --from /tmp/My.app --to ~/Applications/"DeepSeek Harness Launcher.app"
 ```
 
-Replaces any existing install with a full copy of the build — identity and
-icon ship from source (`assets/bundle-identity`, `assets/applet.icns`), so
-nothing in the old bundle is kept. Backs up the old bundle to
-`$TMPDIR` first, then re-signs and verifies.
+Stages and verifies a full copy of the build before replacing any existing
+install. Identity and icon ship from source (`assets/bundle-identity`, `assets/applet.icns`), so
+nothing in the old bundle is kept. The previous app is backed up to
+`$TMPDIR`; a failed replacement restores it.
 
 ## Verify
 

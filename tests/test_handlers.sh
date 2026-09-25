@@ -60,6 +60,24 @@ check "workspace-fakehome" "$TMP/fakehome/.dsh/workspace" "$(HOME="$TMP/fakehome
 # serverCheckURLs(): both loopback families.
 check "server-urls" "http://127.0.0.1:3080/, http://[::1]:3080/" "$(ask 'serverCheckURLs("3080")')"
 
+# A process with a different identity must never be signalled after PID reuse.
+start_time="$(ask "processStartTime(\"$$\")")"
+if [ -z "$start_time" ]; then
+	echo "error: process start time was empty for live shell" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+check "process-start-dead" "" "$(ask 'processStartTime("99999999")')"
+check "process-start-live" "true" "$(/usr/bin/osascript \
+	-e "set h to load script POSIX file \"$SCPT\"" \
+	-e "set h's serverPID to \"$$\"" \
+	-e "set h's serverStartTime to h's processStartTime(h's serverPID)" \
+	-e "return h's processStillOwned()")"
+check "process-start-reused" "false" "$(/usr/bin/osascript \
+	-e "set h to load script POSIX file \"$SCPT\"" \
+	-e "set h's serverPID to \"$$\"" \
+	-e "set h's serverStartTime to \"stale\"" \
+	-e "return h's processStillOwned()")"
+
 # rotateLogIfNeeded(): small kept, large rotated to .1.
 printf 'small' > "$TMP/rot-small.log"
 ask "rotateLogIfNeeded(\"$TMP/rot-small.log\")" >/dev/null

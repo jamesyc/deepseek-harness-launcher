@@ -43,6 +43,10 @@ if ! grep -F -q 'TerminateAfterLastWindowClosed' "$ROOT/src/window/main.swift"; 
 	echo "error: last-close anchor missing from window source" >&2
 	exit 1
 fi
+if ! grep -F -q 'window.isReleasedWhenClosed = false' "$ROOT/src/window/main.swift"; then
+	echo "error: ARC-owned window must disable AppKit release-on-close" >&2
+	exit 1
+fi
 
 # serverURLFromLog(): token, bare, last-wins, empty, missing.
 printf '%s\n' 'starting up' 'dsh web: http://127.0.0.1:54621/?token=AbC_123-xyz' > "$TMP/tok.log"
@@ -58,6 +62,7 @@ check "missing-file-empty" "" "$(ask 'serverURLFromLog("'"$TMP"'/does-not-exist.
 # portOfURL(): the listener PID is re-resolved on the scraped port.
 check "port-token" "54621" "$(ask 'portOfURL("http://127.0.0.1:54621/?token=x")')"
 check "port-bare" "3080" "$(ask 'portOfURL("http://127.0.0.1:3080/")')"
+check "port-ipv6" "54621" "$(ask 'portOfURL("http://[::1]:54621/?token=x")')"
 check "port-garbage" "" "$(ask 'portOfURL("garbage")')"
 check "port-empty" "" "$(ask 'portOfURL("")')"
 

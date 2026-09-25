@@ -12,8 +12,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 setup_tmp
 
 expect_fail() { # expect_fail <label> <command...>
+	local label="$1"
+	shift
 	if "$@" >/dev/null 2>&1; then
-		echo "error: $1: expected failure, got success" >&2
+		echo "error: $label: expected failure, got success" >&2
 		LIB_FAILS=$((LIB_FAILS + 1))
 	fi
 }

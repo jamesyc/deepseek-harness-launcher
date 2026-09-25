@@ -1,5 +1,6 @@
 property serverPID : ""
-property chromePID : ""
+property serverStartTime : ""
+property windowPID : ""
 property ownsServer : false
 
 property serverPort : 3080
@@ -7,7 +8,8 @@ property configRelPath : ".config/deepseek-harness-launcher/config"
 
 on run
 	set serverPID to ""
-	set chromePID to ""
+	set serverStartTime to ""
+	set windowPID to ""
 	set ownsServer to false
 	set targetURL to ""
 
@@ -39,6 +41,7 @@ on run
 		-- Adopt the running server: track it so idle notices if it dies,
 		-- but ownsServer stays false so quit never kills what it didn't start.
 		set serverPID to adoptedPID
+		set serverStartTime to processStartTime(serverPID)
 		-- Pick the window URL: a bare 200 is an old server, a 401 is the
 		-- token fence (rejected below -- the token is unknowable for a
 		-- server we didn't start), anything else keeps legacy leniency.
@@ -78,12 +81,13 @@ on run
 			set dshCommand to dshCommand & " --port 0"
 		end if
 		set launchCommand to launchCommandFor(wsPath, dshCommand, logFile)
-		-- Must return instantly; a hang here stalls run forever (no Chrome,
+		-- Must return instantly; a hang here stalls run forever (no window,
 		-- no idle, no quit handling). Guaranteed by launchCommandFor's shell
 		-- grammar -- see its comment. (Note: `with timeout` does NOT bound
 		-- `do shell script`, so it cannot guard this call.)
 		set serverPID to do shell script launchCommand
 		set ownsServer to true
+		set serverStartTime to processStartTime(serverPID)
 
 		-- Wait for the `dsh web: <url>` startup line, then probe that URL.
 		-- Old servers print a bare URL, new ones a token URL; probing the
@@ -127,7 +131,10 @@ on run
 		set actualPort to portOfURL(targetURL)
 		if actualPort is "" then set actualPort to portText
 		set resolvedPID to resolveServerPid(actualPort, serverPID)
-		if resolvedPID is not "" then set serverPID to resolvedPID
+		if resolvedPID is not "" then
+			set serverPID to resolvedPID
+			set serverStartTime to processStartTime(serverPID)
+		end if
 	end if
 
 	set windowBin to windowAppPath()
@@ -147,11 +154,11 @@ on run
 	-- tab strip, own Dock icon, no browser involved. $! is the window
 	-- process itself, which exits with its last window, so the idle cascade
 	-- keeps working.
-	set chromePID to do shell script windowCommandFor(windowBin, targetURL, wsPath, logFile)
+	set windowPID to do shell script windowCommandFor(windowBin, targetURL, wsPath, logFile)
 	set windowReady to false
 	repeat 10 times
 		try
-			do shell script "/bin/kill -0 " & chromePID
+			do shell script "/bin/kill -0 " & windowPID
 			set windowReady to true
 			exit repeat
 		on error
@@ -166,46 +173,38 @@ on run
 end run
 
 on idle
-	if chromePID is not "" then
+	if windowPID is not "" then
 		try
-			do shell script "/bin/kill -0 " & chromePID
+			do shell script "/bin/kill -0 " & windowPID
 		on error
 			quit
 		end try
 	end if
 
 	if serverPID is not "" then
-		try
-			do shell script "/bin/kill -0 " & serverPID
-		on error
+		if not processStillOwned() then
 			display notification "The DeepSeek Harness server stopped." with title "DeepSeek Harness"
 			quit
-		end try
+		end if
 	end if
 
 	return 2
 end idle
 
 on quit
-	if ownsServer and serverPID is not "" then
+	if ownsServer and processStillOwned() then
 		do shell script "/bin/kill -TERM " & serverPID & " 2>/dev/null || true"
 		repeat 20 times
-			try
-				do shell script "/bin/kill -0 " & serverPID
-				delay 0.25
-			on error
-				exit repeat
-			end try
+			if not processStillOwned() then exit repeat
+			delay 0.25
 		end repeat
-		-- Only escalate to KILL if TERM did not work, so a dead PID that was
-		-- already reused by an unrelated process is never signalled.
-		try
-			do shell script "/bin/kill -0 " & serverPID
+		-- Recheck the original process start time before escalation; kill -0
+		-- alone cannot distinguish the server from a process reusing its PID.
+		if processStillOwned() then
 			do shell script "/bin/kill -KILL " & serverPID & " 2>/dev/null || true"
-		end try
+		end if
 	end if
-	-- The window is left open (as the Chrome app was before it): a crash
-	-- orphan is stopped by stopStaleAppWindows at the next launch.
+	-- The window is left open; a crash orphan is stopped at the next launch.
 	continue quit
 end quit
 
@@ -259,7 +258,7 @@ on portOfURL(targetURL)
 	-- the listener PID can be re-resolved on the server's real (possibly
 	-- OS-picked) port. Returns "" when there is nothing to parse.
 	try
-		return do shell script "/usr/bin/printf %s " & quoted form of targetURL & " | /usr/bin/sed -n -E 's#^https?://[^:/]+:([0-9]+).*#\\1#p' || true"
+		return do shell script "/usr/bin/printf %s " & quoted form of targetURL & " | /usr/bin/sed -n -E 's#^https?://(\\[[^]]+\\]|[^:/]+):([0-9]+)([/?#]|$).*#\\2#p' || true"
 	on error
 		return ""
 	end try
@@ -330,7 +329,7 @@ on dshPidAmongListeners(listenerPIDs)
 		if (candidatePID as text) is not "" then
 			try
 				-- -ww avoids truncating long mise/npx command lines.
-				do shell script "/bin/ps -p " & candidatePID & " -ww -o command= | /usr/bin/grep -E -q '(^|[ /])dsh( |$| web)|@deepseek-ai/dsh'"
+				do shell script "/bin/ps -p " & candidatePID & " -ww -o command= | /usr/bin/grep -E -q '(^|[ /])dsh web( |$)|@deepseek-ai/dsh(@[^ /]+)?(/| web( |$))'"
 				set matchedPID to candidatePID as text
 				exit repeat
 			end try
@@ -360,6 +359,22 @@ on resolveServerPid(portText, launchPID)
 	end if
 	return dshPidAmongListeners(listenerPIDs)
 end resolveServerPid
+
+on processStartTime(pidText)
+	if pidText is "" then return ""
+	try
+		-- Start time survives exec, unlike the command line, and changes if a
+		-- dead server's PID is reused.
+		return do shell script "/bin/ps -p " & quoted form of (pidText as text) & " -o lstart= 2>/dev/null || true"
+	on error
+		return ""
+	end try
+end processStartTime
+
+on processStillOwned()
+	if serverStartTime is "" then return false
+	return processStartTime(serverPID) is serverStartTime
+end processStillOwned
 
 on homeDirectory()
 	-- Prefer $HOME so tests can run hermetically (HOME=$TMP/fakehome);

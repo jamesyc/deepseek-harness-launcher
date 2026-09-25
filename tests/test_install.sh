@@ -14,8 +14,10 @@ need_macos "osacompile missing"
 setup_tmp
 
 expect_fail() { # expect_fail <label> <command...>
+	local label="$1"
+	shift
 	if "$@" >/dev/null 2>&1; then
-		echo "error: $1: expected failure, got success" >&2
+		echo "error: $label: expected failure, got success" >&2
 		LIB_FAILS=$((LIB_FAILS + 1))
 	fi
 }
@@ -50,6 +52,17 @@ test -f "$TMP/to.app/Contents/Resources/Scripts/main.scpt" || {
 	LIB_FAILS=$((LIB_FAILS + 1))
 }
 
+# A bad build must not replace an existing working installation.
+/usr/bin/ditto "$TMP/from.app" "$TMP/bad-from.app"
+printf 'bad-icon' > "$TMP/bad-from.app/Contents/Resources/applet.icns"
+export TMPDIR="$TMP/tmpdir"
+mkdir -p "$TMPDIR"
+expect_fail "install-invalid-source" "$ROOT/scripts/install.sh" --from "$TMP/bad-from.app" --to "$TMP/to.app"
+if ! "$ROOT/scripts/verify.sh" "$TMP/to.app" >/dev/null; then
+	echo "error: install-invalid-source: existing app was replaced" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+
 # Update: pre-seed TO with a sentinel plist key, a rogue identifier, a wrong
 # display name, and stale main.scpt/icon, so the test proves the full copy
 # replaces everything (stale state gone, FROM state present).
@@ -69,8 +82,6 @@ test -f "$TMP/to.app/Contents/Resources/Scripts/main.scpt" || {
 printf 'stale-icon' > "$TMP/to.app/Contents/Resources/applet.icns"
 /usr/bin/codesign --force --deep --sign - "$TMP/to.app" >/dev/null 2>&1
 
-export TMPDIR="$TMP/tmpdir"
-mkdir -p "$TMPDIR"
 if ! "$ROOT/scripts/install.sh" --from "$TMP/from.app" --to "$TMP/to.app" >"$TMP/update-out.txt" 2>&1; then
 	echo "error: install-update: command failed" >&2
 	cat "$TMP/update-out.txt" >&2 || true
@@ -114,6 +125,10 @@ fi
 # ...and a backup bundle was left in TMPDIR.
 if ! ls -d "$TMPDIR"/DeepSeek-Harness-Launcher-backup-*.app >/dev/null 2>&1; then
 	echo "error: install-update: no backup bundle in TMPDIR" >&2
+	LIB_FAILS=$((LIB_FAILS + 1))
+fi
+if ls -d "$TMP"/.deepseek-install.* >/dev/null 2>&1; then
+	echo "error: install-update: staging directory was left behind" >&2
 	LIB_FAILS=$((LIB_FAILS + 1))
 fi
 # Updated TO still verifies and carries a valid signature.
