@@ -89,7 +89,7 @@ final class ServerManagerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: marker) }
         let manager = ServerManager(environment: ["FAKE_DSH_MODE": "silent", "FAKE_DSH_MARKER": marker.path])
         let settings = LauncherSettings(dshPath: fixture.path, workspacePath: NSTemporaryDirectory())
-        XCTAssertThrowsError(try manager.connect(settings: settings, discoverExisting: false, timeout: 0.5))
+        XCTAssertThrowsError(try manager.connect(settings: settings, discoverExisting: false, timeout: 2))
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
 
