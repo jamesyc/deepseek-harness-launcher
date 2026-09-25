@@ -42,8 +42,8 @@ fi
 /usr/bin/codesign "${sign_args[@]}" "$APP"
 /usr/bin/codesign --verify --strict "$APP"
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
-/usr/bin/lipo -verify_arch arm64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
-/usr/bin/lipo -verify_arch x86_64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
+/usr/bin/lipo "$APP/Contents/MacOS/DeepSeekHarnessLauncher" -verify_arch arm64
+/usr/bin/lipo "$APP/Contents/MacOS/DeepSeekHarnessLauncher" -verify_arch x86_64
 
 if [ -e "$ZIP" ]; then rm "$ZIP"; fi
 /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"

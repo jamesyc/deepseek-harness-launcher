@@ -11,8 +11,8 @@ test ! -e "$APP/Contents/Resources/DeepSeek Harness.app"
 test "$(/usr/bin/plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "$VERSION"
 test "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")" = local.deepseek-harness.window
 /usr/bin/codesign --verify --strict "$APP"
-/usr/bin/lipo -verify_arch arm64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
-/usr/bin/lipo -verify_arch x86_64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
+/usr/bin/lipo "$APP/Contents/MacOS/DeepSeekHarnessLauncher" -verify_arch arm64
+/usr/bin/lipo "$APP/Contents/MacOS/DeepSeekHarnessLauncher" -verify_arch x86_64
 if [ "${CODESIGN_IDENTITY:--}" != '-' ]; then
     signature="$(/usr/bin/codesign --display --verbose=4 "$APP" 2>&1)"
     [[ "$signature" == *'(runtime)'* ]]
