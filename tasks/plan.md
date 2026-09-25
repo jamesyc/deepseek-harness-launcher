@@ -26,4 +26,4 @@
 
 ## Known release limit
 
-The current CI archive is ad hoc signed. Developer ID signing and Apple notarization require credentials that have not been configured. The packaging script accepts a local `CODESIGN_IDENTITY` for signed local builds.
+Pull-request artifacts remain ad hoc signed. The tag release job now imports a Developer ID identity, creates a temporary notary profile, signs with hardened runtime and timestamp, notarizes, staples, verifies Gatekeeper, and publishes the final archive. Its first live run remains pending until the `release` environment secrets in `docs/RELEASING.md` are configured.

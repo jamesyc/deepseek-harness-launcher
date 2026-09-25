@@ -13,6 +13,16 @@ test "$(/usr/bin/plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plis
 /usr/bin/codesign --verify --strict "$APP"
 /usr/bin/lipo -verify_arch arm64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
 /usr/bin/lipo -verify_arch x86_64 "$APP/Contents/MacOS/DeepSeekHarnessLauncher"
+if [ "${CODESIGN_IDENTITY:--}" != '-' ]; then
+    signature="$(/usr/bin/codesign --display --verbose=4 "$APP" 2>&1)"
+    [[ "$signature" == *'(runtime)'* ]]
+    [[ "$signature" == *'TeamIdentifier=M22Z394H44'* ]]
+    [[ "$signature" == *'Timestamp='* ]]
+fi
+if [ -n "${NOTARY_PROFILE:-}" ]; then
+    xcrun stapler validate "$APP"
+    /usr/sbin/spctl --assess --type execute "$APP"
+fi
 
 STAGE="$(mktemp -d)"
 trap 'rm -R "$STAGE"' EXIT
