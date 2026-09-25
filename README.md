@@ -9,9 +9,9 @@ A single native Swift app for `dsh web`. It opens the Harness in WebKit, support
 
 ## Get the app
 
-Download the [v1.0.0 macOS archive](https://github.com/jamesyc/deepseek-harness-launcher/releases/download/v1.0.0/DeepSeek-Harness-Launcher-macOS.zip) (or check the [latest release](https://github.com/jamesyc/deepseek-harness-launcher/releases/latest)), unzip it, and drag `DeepSeek Harness Launcher.app` to Applications. There is no installer script. The archive contains one universal app for Apple Silicon and Intel Macs; a [SHA-256 checksum](https://github.com/jamesyc/deepseek-harness-launcher/releases/download/v1.0.0/DeepSeek-Harness-Launcher-macOS.zip.sha256) is published alongside it.
+Download `DeepSeek-Harness-Launcher-macOS.zip` and its `.sha256` checksum from the [latest GitHub release](https://github.com/jamesyc/deepseek-harness-launcher/releases/latest). Unzip the archive and drag `DeepSeek Harness Launcher.app` to Applications. There is no installer script. The archive contains one universal app for Apple Silicon and Intel Macs.
 
-The v1.0.0 app is Developer ID signed, Apple notarized, and stapled. GitHub Actions performs those steps for version-tag releases; pull-request artifacts use ad hoc signing for tests. See [release setup](docs/RELEASING.md).
+Version-tagged release archives are Developer ID signed, Apple notarized, and stapled by GitHub Actions. Pull-request artifacts use ad hoc signing for tests. See [release setup](docs/RELEASING.md).
 
 ## What happens at launch
 
