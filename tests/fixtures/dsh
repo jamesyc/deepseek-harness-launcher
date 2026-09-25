@@ -46,7 +46,7 @@ if mode != "silent":
     print(f"dsh web: {url}", flush=True)
 if mode == "exit-later":
     signal.signal(signal.SIGALRM, lambda *_: sys.exit(0))
-    signal.alarm(1)
+    signal.alarm(3)
 
 
 def stop(*args):

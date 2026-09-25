@@ -42,22 +42,16 @@ final class ServerDiscoveryTests: XCTestCase {
     }
 
     func testTokenServerWithoutReadableLogUsesPreferredURL() throws {
-        let portFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: portFile) }
         let process = Process()
         process.executableURL = fixture
         process.arguments = ["web", "--no-open", "--port", "0"]
-        process.environment = ProcessInfo.processInfo.environment.merging([
-            "FAKE_DSH_MODE": "token", "FAKE_DSH_PORT_FILE": portFile.path
-        ]) { _, new in new }
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        process.environment = ProcessInfo.processInfo.environment.merging(["FAKE_DSH_MODE": "token"]) { _, new in new }
+        let output = Pipe()
+        process.standardOutput = output
         try process.run()
         defer { process.terminate(); process.waitUntilExit() }
-        for _ in 0..<30 where !FileManager.default.fileExists(atPath: portFile.path) {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
-        let port = try XCTUnwrap(Int(String(contentsOf: portFile, encoding: .utf8)))
+        let line = try XCTUnwrap(String(data: output.fileHandleForReading.availableData, encoding: .utf8))
+        let port = try XCTUnwrap(ServerURL.fromStartupLine(line)?.port)
         XCTAssertThrowsError(try ServerDiscovery.find(onlyPID: process.processIdentifier)) { error in
             guard case ServerError.tokenRequired = error else { return XCTFail("Expected tokenRequired") }
         }

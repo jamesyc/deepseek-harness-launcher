@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct ServerConnection {
     public let url: URL
@@ -48,32 +49,78 @@ enum CommandOutput {
 
 public enum HTTPProbe {
     public static func status(_ url: URL, timeout: TimeInterval = 1.5) -> Int {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.connectionProxyDictionary = [:]
-        let session = URLSession(configuration: configuration)
-        var request = URLRequest(url: url)
-        request.timeoutInterval = timeout
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        let done = DispatchSemaphore(value: 0)
-        let lock = NSLock()
-        var code: Int?
-        let task = session.dataTask(with: request) { _, response, _ in
-            lock.lock()
-            code = (response as? HTTPURLResponse)?.statusCode
-            lock.unlock()
-            done.signal()
+        guard ServerURL.isLoopback(url), let host = url.host, let port = url.port,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return 0 }
+        let addresses = host == "::1" ? ["::1"] : host == "localhost" ? ["127.0.0.1", "::1"] : ["127.0.0.1"]
+        let path = (components.percentEncodedPath.isEmpty ? "/" : components.percentEncodedPath)
+            + (components.percentEncodedQuery.map { "?" + $0 } ?? "")
+        let authority = host == "::1" ? "[::1]:\(port)" : "\(host):\(port)"
+        let request = Array("GET \(path) HTTP/1.1\r\nHost: \(authority)\r\nConnection: close\r\n\r\n".utf8)
+
+        for address in addresses {
+            let family = address == "::1" ? AF_INET6 : AF_INET
+            let descriptor = Darwin.socket(family, SOCK_STREAM, 0)
+            guard descriptor >= 0 else { continue }
+            defer { Darwin.close(descriptor) }
+            var deadline = timeval(tv_sec: Int(timeout), tv_usec: Int32((timeout.truncatingRemainder(dividingBy: 1)) * 1_000_000))
+            withUnsafePointer(to: &deadline) {
+                _ = Darwin.setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, $0, socklen_t(MemoryLayout<timeval>.size))
+                _ = Darwin.setsockopt(descriptor, SOL_SOCKET, SO_SNDTIMEO, $0, socklen_t(MemoryLayout<timeval>.size))
+            }
+            let connected: Int32
+            if family == AF_INET6 {
+                var socketAddress = sockaddr_in6()
+                socketAddress.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                socketAddress.sin6_family = sa_family_t(AF_INET6)
+                socketAddress.sin6_port = in_port_t(port).bigEndian
+                _ = address.withCString { Darwin.inet_pton(AF_INET6, $0, &socketAddress.sin6_addr) }
+                connected = withUnsafePointer(to: &socketAddress) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                    }
+                }
+            } else {
+                var socketAddress = sockaddr_in()
+                socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                socketAddress.sin_family = sa_family_t(AF_INET)
+                socketAddress.sin_port = in_port_t(port).bigEndian
+                _ = address.withCString { Darwin.inet_pton(AF_INET, $0, &socketAddress.sin_addr) }
+                connected = withUnsafePointer(to: &socketAddress) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+            }
+            guard connected == 0 else { continue }
+            var sent = 0
+            while sent < request.count {
+                let count = request.withUnsafeBytes {
+                    Darwin.send(descriptor, $0.baseAddress!.advanced(by: sent), request.count - sent, 0)
+                }
+                if count <= 0 { break }
+                sent += count
+            }
+            guard sent == request.count else { continue }
+            var response = [UInt8]()
+            while response.count < 1024 && !response.contains(10) {
+                var bytes = [UInt8](repeating: 0, count: 256)
+                let count = Darwin.recv(descriptor, &bytes, bytes.count, 0)
+                if count <= 0 { break }
+                response.append(contentsOf: bytes.prefix(count))
+            }
+            let firstLine = String(decoding: response, as: UTF8.self).split(separator: "\n").first ?? ""
+            let words = firstLine.split(separator: " ")
+            if words.count >= 2, let code = Int(words[1]) { return code }
         }
-        task.resume()
-        if done.wait(timeout: .now() + timeout + 0.5) == .timedOut { task.cancel() }
-        session.invalidateAndCancel()
-        lock.lock(); defer { lock.unlock() }
-        return code ?? 0
+        return 0
     }
 }
 
 public enum ServerDiscovery {
     public static func find(preferredURL: URL? = nil, onlyPID: Int32? = nil) throws -> ServerConnection? {
-        guard let output = CommandOutput.run("/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]) else {
+        var arguments = ["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]
+        if let onlyPID { arguments += ["-a", "-p", "\(onlyPID)"] }
+        guard let output = CommandOutput.run("/usr/sbin/lsof", arguments) else {
             return nil
         }
         var candidates: [Int32: Set<Int>] = [:]
