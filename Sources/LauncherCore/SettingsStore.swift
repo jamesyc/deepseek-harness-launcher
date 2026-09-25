@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-public struct LauncherSettings: Equatable {
+public struct LauncherSettings: Equatable, Sendable {
     public var dshPath: String?
     public var workspacePath: String
     public var existingServerURL: String?

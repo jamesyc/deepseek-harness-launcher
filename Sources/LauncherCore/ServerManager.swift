@@ -33,7 +33,8 @@ private final class StartupOutput {
     }
 }
 
-public final class ServerManager {
+// The app calls connect and stop on one serial service queue.
+public final class ServerManager: @unchecked Sendable {
     private let environment: [String: String]
     private let discover: (URL?) throws -> ServerConnection?
     private var process: Process?
