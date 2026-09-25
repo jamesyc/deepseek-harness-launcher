@@ -8,39 +8,51 @@ public enum DshLocatorError: LocalizedError {
     }
 }
 
+public struct DshLaunch {
+    public let executableURL: URL
+    public let argumentsPrefix: [String]
+    public let environment: [String: String]
+}
+
 public enum DshLocator {
-    public static func resolve(configuredPath: String?, searchDirectories: [String]? = nil) throws -> URL {
+    private static let miseEnvironment = ["MISE_AUTO_INSTALL": "false", "MISE_EXEC_AUTO_INSTALL": "false"]
+
+    public static func resolve(configuredPath: String?, searchDirectories: [String]? = nil,
+                               workingDirectory: URL? = nil) throws -> DshLaunch {
         let files = FileManager.default
         if let configuredPath, !configuredPath.isEmpty {
             let expanded = (configuredPath as NSString).expandingTildeInPath
             guard expanded.hasPrefix("/"), files.isExecutableFile(atPath: expanded) else {
                 throw DshLocatorError.missing
             }
-            return URL(fileURLWithPath: expanded)
+            return DshLaunch(executableURL: URL(fileURLWithPath: expanded), argumentsPrefix: [], environment: [:])
         }
 
         let directories = searchDirectories ?? defaultSearchDirectories
         for directory in directories where directory.hasPrefix("/") {
             let path = (directory as NSString).appendingPathComponent("dsh")
-            if files.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
+            if files.isExecutableFile(atPath: path) {
+                return DshLaunch(executableURL: URL(fileURLWithPath: path), argumentsPrefix: [], environment: [:])
+            }
         }
-        if searchDirectories == nil {
-            for directory in directories {
-                let mise = (directory as NSString).appendingPathComponent("mise")
-                guard files.isExecutableFile(atPath: mise) else { continue }
-                let process = Process()
-                let output = Pipe()
-                process.executableURL = URL(fileURLWithPath: mise)
-                process.arguments = ["which", "dsh"]
-                process.standardOutput = output
-                process.standardError = FileHandle.nullDevice
-                guard (try? process.run()) != nil else { continue }
-                let path = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                process.waitUntilExit()
-                if process.terminationStatus == 0 && files.isExecutableFile(atPath: path) {
-                    return URL(fileURLWithPath: path)
-                }
+        for directory in directories where directory.hasPrefix("/") {
+            let mise = (directory as NSString).appendingPathComponent("mise")
+            guard files.isExecutableFile(atPath: mise) else { continue }
+            let process = Process()
+            let output = Pipe()
+            process.executableURL = URL(fileURLWithPath: mise)
+            process.arguments = ["which", "dsh"]
+            process.currentDirectoryURL = workingDirectory
+            process.environment = ProcessInfo.processInfo.environment.merging(miseEnvironment) { _, new in new }
+            process.standardOutput = output
+            process.standardError = FileHandle.nullDevice
+            guard (try? process.run()) != nil else { continue }
+            let path = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            process.waitUntilExit()
+            if process.terminationStatus == 0 && path.hasPrefix("/") && files.isExecutableFile(atPath: path) {
+                return DshLaunch(executableURL: URL(fileURLWithPath: mise),
+                                 argumentsPrefix: ["exec", "--", path], environment: miseEnvironment)
             }
         }
         throw DshLocatorError.missing

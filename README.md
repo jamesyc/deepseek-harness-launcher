@@ -15,7 +15,7 @@ Version-tag releases are Developer ID signed and notarized when the `release` Gi
 
 ## What happens at launch
 
-1. The app looks for `dsh` on common executable paths or through `mise which dsh`. A path selected in Settings takes precedence. If no executable exists, it displays an error.
+1. The app looks for `dsh` on common executable paths or through `mise which dsh`. A path selected in Settings takes precedence. A mise-resolved `dsh` runs through `mise exec` so its runtime is on `PATH`; automatic tool installation is disabled. If no executable exists, the app displays an error.
 2. It checks for a running `dsh web` listener. If one responds, the app attaches to it and **does not stop it** when the app quits. A token-protected server can be attached when its startup URL is available from its open log, or from a URL saved in Settings. If a terminal-started server hides its token URL, paste the URL printed by `dsh web` into Settings.
 3. If no `dsh web` server is running, the app launches the installed executable with `web --no-open --port 0`. It reads the startup URL, waits for HTTP readiness, and opens it in WebKit. When the last Harness window closes or you choose Quit, it stops only this child process.
 
