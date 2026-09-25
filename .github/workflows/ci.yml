@@ -1,42 +1,59 @@
-name: ci
+name: macOS app
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
+    tags: ["v*"]
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  fast:
-    # Pure-shell tests that run anywhere (no osacompile/plutil needed).
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  test-and-package:
+    runs-on: macos-15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: command -v shellcheck >/dev/null 2>&1 || sudo apt-get install -y shellcheck
-      - name: Lint shell scripts
-        run: shellcheck scripts/*.sh tests/*.sh
-      - name: Run portable tests
-        run: bash tests/test_port_match.sh && bash tests/test_no_pipe_grep.sh && bash tests/test_safety.sh
+      - name: Lint package scripts
+        run: |
+          brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
+          shellcheck scripts/package.sh tests/test_package.sh
+      - name: Run Swift tests
+        run: swift test
+      - name: Build and verify universal app archive
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            ./tests/test_package.sh "${GITHUB_REF_NAME#v}"
+          else
+            ./tests/test_package.sh
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeepSeek-Harness-Launcher-macOS
+          path: |
+            dist/DeepSeek-Harness-Launcher-macOS.zip
+            dist/DeepSeek-Harness-Launcher-macOS.zip.sha256
+          if-no-files-found: error
 
-  check:
-    # osacompile/plutil/osadecompile only exist on macOS.
-    # macos-latest intentionally floats: pinning a version label that
-    # no longer exists breaks CI harder than SDK drift does here.
-    runs-on: macos-latest
-    timeout-minutes: 20
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-and-package
+    runs-on: macos-15
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
-      - name: Lint shell scripts
-        run: shellcheck scripts/*.sh tests/*.sh
-      - name: Run tests
-        run: ./tests/run.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: DeepSeek-Harness-Launcher-macOS
+          path: dist
+      - name: Publish release archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            dist/DeepSeek-Harness-Launcher-macOS.zip \
+            dist/DeepSeek-Harness-Launcher-macOS.zip.sha256 \
+            --generate-notes --repo "$GITHUB_REPOSITORY"

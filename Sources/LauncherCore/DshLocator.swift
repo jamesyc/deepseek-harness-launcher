@@ -13,12 +13,14 @@ public enum DshLocator {
         let files = FileManager.default
         if let configuredPath, !configuredPath.isEmpty {
             let expanded = (configuredPath as NSString).expandingTildeInPath
-            guard files.isExecutableFile(atPath: expanded) else { throw DshLocatorError.missing }
+            guard expanded.hasPrefix("/"), files.isExecutableFile(atPath: expanded) else {
+                throw DshLocatorError.missing
+            }
             return URL(fileURLWithPath: expanded)
         }
 
         let directories = searchDirectories ?? defaultSearchDirectories
-        for directory in directories {
+        for directory in directories where directory.hasPrefix("/") {
             let path = (directory as NSString).appendingPathComponent("dsh")
             if files.isExecutableFile(atPath: path) { return URL(fileURLWithPath: path) }
         }

@@ -66,4 +66,22 @@ final class ServerDiscoveryTests: XCTestCase {
         XCTAssertEqual(connection?.url, preferred)
         XCTAssertFalse(connection?.isOwned ?? true)
     }
+
+    func testFindsIPv6OnlyServer() throws {
+        let process = Process()
+        process.executableURL = fixture
+        process.arguments = ["web", "--no-open", "--port", "0"]
+        process.environment = ProcessInfo.processInfo.environment.merging([
+            "FAKE_DSH_MODE": "bare", "FAKE_DSH_HOST": "::1"
+        ]) { _, new in new }
+        let output = Pipe()
+        process.standardOutput = output
+        try process.run()
+        defer { process.terminate(); process.waitUntilExit() }
+        _ = output.fileHandleForReading.availableData
+
+        let connection = try ServerDiscovery.find(onlyPID: process.processIdentifier)
+        XCTAssertEqual(connection?.url.host, "::1")
+        XCTAssertFalse(connection?.isOwned ?? true)
+    }
 }

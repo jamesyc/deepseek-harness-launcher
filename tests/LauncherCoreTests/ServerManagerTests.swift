@@ -17,7 +17,7 @@ final class ServerManagerTests: XCTestCase {
         let connection = try manager.connect(settings: settings, discoverExisting: false, timeout: 5)
         XCTAssertTrue(connection.isOwned)
         XCTAssertEqual(connection.url.query, "token=test-secret")
-        XCTAssertEqual(try HTTPProbe.status(connection.url), 200)
+        XCTAssertEqual(HTTPProbe.status(connection.url), 200)
         manager.stop()
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
@@ -37,6 +37,31 @@ final class ServerManagerTests: XCTestCase {
         let connection = try manager.connect(settings: settings, discoverExisting: false, timeout: 5)
         XCTAssertTrue(connection.isOwned)
         XCTAssertNil(connection.url.query)
+    }
+
+    func testStartsWhenDiscoveryFindsNoRunningServer() throws {
+        var discoveryCalled = false
+        let manager = ServerManager(environment: ["FAKE_DSH_MODE": "bare"], discover: { _ in
+            discoveryCalled = true
+            return nil
+        })
+        defer { manager.stop() }
+        let settings = LauncherSettings(dshPath: fixture.path, workspacePath: NSTemporaryDirectory())
+        let connection = try manager.connect(settings: settings, timeout: 5)
+        XCTAssertTrue(discoveryCalled)
+        XCTAssertTrue(connection.isOwned)
+        XCTAssertTrue(manager.isOwnedProcessRunning)
+    }
+
+    func testMissingDshFailsBeforeDiscoveryOrLaunch() {
+        let manager = ServerManager(discover: { _ in
+            XCTFail("Discovery should not run without an installed dsh")
+            return nil
+        })
+        let settings = LauncherSettings(dshPath: "/definitely/missing/dsh", workspacePath: NSTemporaryDirectory())
+        XCTAssertThrowsError(try manager.connect(settings: settings)) { error in
+            guard case DshLocatorError.missing = error else { return XCTFail("Expected missing dsh") }
+        }
     }
 
     func testAttachedServerIsNotStopped() throws {
@@ -75,5 +100,17 @@ final class ServerManagerTests: XCTestCase {
             XCTAssertFalse(error.localizedDescription.contains("do-not-log-this"))
             XCTAssertTrue(error.localizedDescription.contains("[redacted]"))
         }
+    }
+
+    func testNoticesUnexpectedOwnedServerExit() throws {
+        let manager = ServerManager(environment: ["FAKE_DSH_MODE": "exit-later"])
+        let settings = LauncherSettings(dshPath: fixture.path, workspacePath: NSTemporaryDirectory())
+        let connection = try manager.connect(settings: settings, discoverExisting: false, timeout: 5)
+        XCTAssertTrue(connection.isOwned)
+        for _ in 0..<30 where manager.isOwnedProcessRunning {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(manager.isOwnedProcessRunning)
+        manager.stop()
     }
 }

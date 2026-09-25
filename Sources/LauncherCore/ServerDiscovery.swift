@@ -47,7 +47,7 @@ enum CommandOutput {
 }
 
 public enum HTTPProbe {
-    public static func status(_ url: URL, timeout: TimeInterval = 1.5) throws -> Int {
+    public static func status(_ url: URL, timeout: TimeInterval = 1.5) -> Int {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
         let session = URLSession(configuration: configuration)
@@ -55,14 +55,18 @@ public enum HTTPProbe {
         request.timeoutInterval = timeout
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let done = DispatchSemaphore(value: 0)
+        let lock = NSLock()
         var code: Int?
         let task = session.dataTask(with: request) { _, response, _ in
+            lock.lock()
             code = (response as? HTTPURLResponse)?.statusCode
+            lock.unlock()
             done.signal()
         }
         task.resume()
         if done.wait(timeout: .now() + timeout + 0.5) == .timedOut { task.cancel() }
         session.invalidateAndCancel()
+        lock.lock(); defer { lock.unlock() }
         return code ?? 0
     }
 }
@@ -92,15 +96,17 @@ public enum ServerDiscovery {
                   isDshCommand(command) else { continue }
             foundDsh = true
             for port in candidates[pid, default: []].sorted() {
-                guard let bare = URL(string: "http://127.0.0.1:\(port)/") else { continue }
-                let status = (try? HTTPProbe.status(bare)) ?? 0
-                if (200...299).contains(status) { return ServerConnection(url: bare, isOwned: false) }
-                if status == 401 {
-                    needsToken = true
-                    let urls = [preferredURL, startupURL(inOpenLogsOf: pid, port: port)].compactMap { $0 }
-                    for url in urls where url.port == port && ServerURL.isLoopback(url) {
-                        if (try? HTTPProbe.status(url)) == 200 {
-                            return ServerConnection(url: url, isOwned: false)
+                for host in ["127.0.0.1", "[::1]"] {
+                    guard let bare = URL(string: "http://\(host):\(port)/") else { continue }
+                    let status = HTTPProbe.status(bare)
+                    if (200...299).contains(status) { return ServerConnection(url: bare, isOwned: false) }
+                    if status == 401 {
+                        needsToken = true
+                        let urls = [preferredURL, startupURL(inOpenLogsOf: pid, port: port)].compactMap { $0 }
+                        for url in urls where url.port == port && ServerURL.isLoopback(url) {
+                            if (200...299).contains(HTTPProbe.status(url)) {
+                                return ServerConnection(url: url, isOwned: false)
+                            }
                         }
                     }
                 }

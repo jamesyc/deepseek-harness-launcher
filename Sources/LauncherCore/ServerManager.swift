@@ -37,6 +37,7 @@ private final class StartupOutput {
 public final class ServerManager: @unchecked Sendable {
     private let environment: [String: String]
     private let discover: (URL?) throws -> ServerConnection?
+    private let processLock = NSLock()
     private var process: Process?
     private var output: Pipe?
 
@@ -44,6 +45,11 @@ public final class ServerManager: @unchecked Sendable {
                 discover: @escaping (URL?) throws -> ServerConnection? = { try ServerDiscovery.find(preferredURL: $0) }) {
         self.environment = environment
         self.discover = discover
+    }
+
+    public var isOwnedProcessRunning: Bool {
+        processLock.lock(); defer { processLock.unlock() }
+        return process?.isRunning == true
     }
 
     public func connect(settings: LauncherSettings, discoverExisting: Bool = true,
@@ -75,12 +81,14 @@ public final class ServerManager: @unchecked Sendable {
             pipe.fileHandleForReading.readabilityHandler = nil
             throw error
         }
+        processLock.lock()
         process = child
+        processLock.unlock()
         output = pipe
 
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let url = startup.url, (try? HTTPProbe.status(url)) == 200 {
+            if let url = startup.url, HTTPProbe.status(url) == 200 {
                 return ServerConnection(url: url, isOwned: true)
             }
             if !child.isRunning {
@@ -95,7 +103,10 @@ public final class ServerManager: @unchecked Sendable {
     }
 
     public func stop() {
-        guard let child = process else { return }
+        processLock.lock()
+        let child = process
+        processLock.unlock()
+        guard let child else { return }
         if child.isRunning { child.terminate() }
         let deadline = Date().addingTimeInterval(5)
         while child.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
@@ -103,7 +114,9 @@ public final class ServerManager: @unchecked Sendable {
         child.waitUntilExit()
         output?.fileHandleForReading.readabilityHandler = nil
         output = nil
+        processLock.lock()
         process = nil
+        processLock.unlock()
     }
 
     deinit { stop() }

@@ -29,5 +29,7 @@ final class SettingsTests: XCTestCase {
 
         XCTAssertThrowsError(try store.save(.init(dshPath: nil, workspacePath: "/tmp",
                                                   existingServerURL: "https://example.com:443/")))
+        XCTAssertThrowsError(try store.save(.init(dshPath: nil, workspacePath: "   ")))
+        XCTAssertThrowsError(try store.save(.init(dshPath: nil, workspacePath: "relative/path")))
     }
 }

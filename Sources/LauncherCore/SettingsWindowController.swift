@@ -15,6 +15,7 @@ public final class SettingsWindowController: NSWindowController {
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         super.init(window: window)
         window.title = "Settings"
+        window.isReleasedWhenClosed = false
         window.center()
         buildContent()
         let settings = store.load()
