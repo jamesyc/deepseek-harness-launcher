@@ -48,6 +48,14 @@ enum CommandOutput {
 }
 
 public enum HTTPProbe {
+    static func acceptsLaunchURL(_ url: URL) -> Bool {
+        let code = status(url)
+        if (200...299).contains(code) { return true }
+        // dsh exchanges the launch token for a session cookie and redirects to the clean URL.
+        return code == 303 && URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.contains { $0.name == "token" && !($0.value ?? "").isEmpty } == true
+    }
+
     public static func status(_ url: URL, timeout: TimeInterval = 1.5) -> Int {
         guard ServerURL.isLoopback(url), let host = url.host, let port = url.port,
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return 0 }
@@ -151,7 +159,7 @@ public enum ServerDiscovery {
                         needsToken = true
                         let urls = [preferredURL, startupURL(inOpenLogsOf: pid, port: port)].compactMap { $0 }
                         for url in urls where url.port == port && ServerURL.isLoopback(url) {
-                            if (200...299).contains(HTTPProbe.status(url)) {
+                            if HTTPProbe.acceptsLaunchURL(url) {
                                 return ServerConnection(url: url, isOwned: false)
                             }
                         }
@@ -165,7 +173,7 @@ public enum ServerDiscovery {
     }
 
     static func isDshCommand(_ command: String) -> Bool {
-        command.range(of: #"(?:^|[ /])dsh(?:/lib/bin\.js)?\s+web(?:\s|$)"#,
+        command.range(of: #"(?:^|[ /])dsh(?:/lib/bin\.js)?\s+(?:--profile(?:=|\s+))?web(?:\s|$)"#,
                       options: .regularExpression) != nil
     }
 

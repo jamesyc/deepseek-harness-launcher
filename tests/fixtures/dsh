@@ -6,6 +6,7 @@ import signal
 import socket
 import socketserver
 import sys
+from urllib.parse import parse_qs, urlsplit
 
 mode = os.environ.get("FAKE_DSH_MODE", "token")
 marker = os.environ.get("FAKE_DSH_MARKER")
@@ -19,7 +20,16 @@ if mode == "exit-secret":
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        authorized = mode != "token" or "token=test-secret" in self.path
+        if mode == "token-redirect" and parse_qs(urlsplit(self.path).query).get("token") == ["test-secret"]:
+            self.send_response(303)
+            self.send_header("Location", "./")
+            self.send_header("Set-Cookie", "dsh_session=fixture; HttpOnly; SameSite=Strict")
+            self.end_headers()
+            return
+        if mode == "token-redirect":
+            authorized = self.headers.get("Cookie") == "dsh_session=fixture"
+        else:
+            authorized = mode != "token" or "token=test-secret" in self.path
         self.send_response(200 if authorized else 401)
         self.end_headers()
         self.wfile.write(b"dsh fixture" if authorized else b"token required")
@@ -46,7 +56,7 @@ else:
     server = FastHTTPServer((host, 0), Handler)
 url_host = "[::1]" if host == "::1" else host
 url = f"http://{url_host}:{server.server_address[1]}/"
-if mode == "token":
+if mode in ("token", "token-redirect"):
     url += "?token=test-secret"
 if mode != "silent":
     print(f"dsh web: {url}", flush=True)

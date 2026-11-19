@@ -30,6 +30,17 @@ final class ServerManagerTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 3)
     }
 
+    func testStartsServerThatRedirectsAfterTokenExchange() throws {
+        let manager = ServerManager(environment: ["FAKE_DSH_MODE": "token-redirect"])
+        let settings = LauncherSettings(dshPath: fixture.path, workspacePath: NSTemporaryDirectory())
+        defer { manager.stop() }
+
+        let connection = try manager.connect(settings: settings, discoverExisting: false, timeout: 5)
+        XCTAssertTrue(connection.isOwned)
+        XCTAssertEqual(connection.url.query, "token=test-secret")
+        XCTAssertEqual(HTTPProbe.status(connection.url), 303)
+    }
+
     func testStartsBareURLServer() throws {
         let manager = ServerManager(environment: ["FAKE_DSH_MODE": "bare"])
         let settings = LauncherSettings(dshPath: fixture.path, workspacePath: NSTemporaryDirectory())

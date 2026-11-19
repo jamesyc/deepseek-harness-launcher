@@ -100,7 +100,7 @@ public final class ServerManager: @unchecked Sendable {
 
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let url = startup.url, HTTPProbe.status(url) == 200 {
+            if let url = startup.url, HTTPProbe.acceptsLaunchURL(url) {
                 return ServerConnection(url: url, isOwned: true)
             }
             if !child.isRunning {

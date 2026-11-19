@@ -36,6 +36,7 @@ final class ServerDiscoveryTests: XCTestCase {
 
     func testCommandCheckRejectsLookalikes() {
         XCTAssertTrue(ServerDiscovery.isDshCommand("node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 0"))
+        XCTAssertTrue(ServerDiscovery.isDshCommand("node /tmp/@deepseek-ai/dsh/lib/bin.js --profile web --port 0"))
         XCTAssertTrue(ServerDiscovery.isDshCommand("/tmp/fixtures/dsh web --port 0"))
         XCTAssertFalse(ServerDiscovery.isDshCommand("vim dsh-notes.txt"))
         XCTAssertFalse(ServerDiscovery.isDshCommand("node /tmp/dsh/lib/bin.js inspect"))
@@ -44,8 +45,8 @@ final class ServerDiscoveryTests: XCTestCase {
     func testTokenServerWithoutReadableLogUsesPreferredURL() throws {
         let process = Process()
         process.executableURL = fixture
-        process.arguments = ["web", "--no-open", "--port", "0"]
-        process.environment = ProcessInfo.processInfo.environment.merging(["FAKE_DSH_MODE": "token"]) { _, new in new }
+        process.arguments = ["--profile", "web", "--no-open", "--port", "0"]
+        process.environment = ProcessInfo.processInfo.environment.merging(["FAKE_DSH_MODE": "token-redirect"]) { _, new in new }
         let output = Pipe()
         process.standardOutput = output
         try process.run()
@@ -56,6 +57,8 @@ final class ServerDiscoveryTests: XCTestCase {
             guard case ServerError.tokenRequired = error else { return XCTFail("Expected tokenRequired") }
         }
         let preferred = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/?token=test-secret"))
+        let invalid = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/?token=invalid"))
+        XCTAssertThrowsError(try ServerDiscovery.find(preferredURL: invalid, onlyPID: process.processIdentifier))
         let connection = try ServerDiscovery.find(preferredURL: preferred, onlyPID: process.processIdentifier)
         XCTAssertEqual(connection?.url, preferred)
         XCTAssertFalse(connection?.isOwned ?? true)
